@@ -48,6 +48,27 @@ func (rev Revision) String() string {
 	return base64.StdEncoding.EncodeToString(rev)
 }
 
+func (rev Revision) Increase() Revision {
+	if rev == nil {
+		return []byte{0}
+	}
+	out := make([]byte, 0, len(rev)+1)
+	incr := true
+	for i := range rev {
+		if incr {
+			if rev[i] < 255 {
+				out = append(out, rev[i]+1)
+			} else {
+				out = append(out, 0)
+				out = append(out, 255)
+			}
+			incr = false
+		} else {
+			out = append(out, rev[i])
+		}
+	}
+	return out
+}
 func ToRevision(s string) (Revision, error) {
 	return base64.StdEncoding.DecodeString(s)
 }

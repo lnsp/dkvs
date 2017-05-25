@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"log"
+
 	"github.com/lnsp/dkvs/nodes"
 )
 
@@ -49,21 +51,11 @@ var (
 	CommandOwn      = &Command{Name: "OWN"}
 )
 
-type RemoteNode interface {
+type Node interface {
 	Close()
 	Queue(cmd *Command) (*Command, error)
 	Poll() (*Command, error)
 	Push(*Command) error
-}
-
-type Slave interface {
-	nodes.Slave
-	RemoteNode
-}
-
-type Master interface {
-	nodes.Master
-	RemoteNode
 }
 
 type Command struct {
@@ -76,7 +68,7 @@ func (cmd Command) KindOf(kind *Command) bool {
 }
 
 func (cmd Command) Arg(index int) string {
-	if len(cmd.Args) >= index {
+	if len(cmd.Args) <= index {
 		return ""
 	}
 	return cmd.Args[index]
@@ -122,12 +114,12 @@ func UnmarshalCommand(cmd []byte) (*Command, error) {
 	}, nil
 }
 
-type RemoteSlave struct {
+type Slave struct {
 	Connection    net.Conn
 	PublicAddress string
 }
 
-func (slave *RemoteSlave) remoteStatus() string {
+func (slave *Slave) remoteStatus() string {
 	if slave.Connection != nil {
 		response, err := slave.Queue(CommandStatus)
 		if err != nil {
@@ -141,7 +133,8 @@ func (slave *RemoteSlave) remoteStatus() string {
 	return StatusDown
 }
 
-func (slave *RemoteSlave) Push(cmd *Command) error {
+func (slave *Slave) Push(cmd *Command) error {
+	log.Println("Poll", cmd)
 	_, err := slave.Connection.Write(cmd.Marshal())
 	if err != nil {
 		return errors.New("Could not write to socket")
@@ -149,7 +142,7 @@ func (slave *RemoteSlave) Push(cmd *Command) error {
 	return nil
 }
 
-func (slave *RemoteSlave) Poll() (*Command, error) {
+func (slave *Slave) Poll() (*Command, error) {
 	data, _, err := bufio.NewReader(slave.Connection).ReadLine()
 	if err != nil {
 		return nil, errors.New("Could not read from socket")
@@ -158,10 +151,11 @@ func (slave *RemoteSlave) Poll() (*Command, error) {
 	if err != nil {
 		return nil, errors.New("Could not unmarshal command")
 	}
+	log.Println("Push", cmd)
 	return cmd, nil
 }
 
-func (slave *RemoteSlave) Queue(cmd *Command) (*Command, error) {
+func (slave *Slave) Queue(cmd *Command) (*Command, error) {
 	if err := slave.Push(cmd); err != nil {
 		return nil, errors.New("Could not write request to socket")
 	}
@@ -178,7 +172,7 @@ func (slave *RemoteSlave) Queue(cmd *Command) (*Command, error) {
 	return respCmd, nil
 }
 
-func (slave *RemoteSlave) keepConnectionAlive() error {
+func (slave *Slave) keepConnectionAlive() error {
 	if slave.remoteStatus() != StatusDown {
 		return nil
 	}
@@ -202,7 +196,7 @@ func (slave *RemoteSlave) keepConnectionAlive() error {
 	return nil
 }
 
-func (slave *RemoteSlave) Address() string {
+func (slave *Slave) Address() string {
 	if err := slave.keepConnectionAlive(); err != nil {
 		return slave.PublicAddress
 	}
@@ -214,7 +208,7 @@ func (slave *RemoteSlave) Address() string {
 	return slave.PublicAddress
 }
 
-func (slave *RemoteSlave) Read(key string) (string, nodes.Revision, error) {
+func (slave *Slave) Read(key string) (string, nodes.Revision, error) {
 	if err := slave.keepConnectionAlive(); err != nil {
 		return key, nil, err
 	}
@@ -229,7 +223,7 @@ func (slave *RemoteSlave) Read(key string) (string, nodes.Revision, error) {
 	return response.Arg(0), rev, nil
 }
 
-func (slave *RemoteSlave) Store(key, value string, rev nodes.Revision) error {
+func (slave *Slave) Store(key, value string, rev nodes.Revision) error {
 	if err := slave.keepConnectionAlive(); err != nil {
 		return err
 	}
@@ -243,7 +237,7 @@ func (slave *RemoteSlave) Store(key, value string, rev nodes.Revision) error {
 	return nil
 }
 
-func (slave *RemoteSlave) Status() nodes.Status {
+func (slave *Slave) Status() nodes.Status {
 	switch slave.remoteStatus() {
 	case StatusDown:
 		return nodes.StatusDown
@@ -258,7 +252,7 @@ func (slave *RemoteSlave) Status() nodes.Status {
 	}
 }
 
-func (slave *RemoteSlave) Shutdown() error {
+func (slave *Slave) Shutdown() error {
 	if err := slave.keepConnectionAlive(); err != nil {
 		return err
 	}
@@ -272,7 +266,7 @@ func (slave *RemoteSlave) Shutdown() error {
 	return nil
 }
 
-func (slave *RemoteSlave) Revision() (nodes.Revision, error) {
+func (slave *Slave) Revision() (nodes.Revision, error) {
 	if err := slave.keepConnectionAlive(); err != nil {
 		return nil, err
 	}
@@ -287,7 +281,7 @@ func (slave *RemoteSlave) Revision() (nodes.Revision, error) {
 	return nodes.Revision(bytes), nil
 }
 
-func (slave *RemoteSlave) Own(m nodes.Master) error {
+func (slave *Slave) Own(m nodes.Master) error {
 	if err := slave.keepConnectionAlive(); err != nil {
 		return err
 	}
@@ -301,11 +295,11 @@ func (slave *RemoteSlave) Own(m nodes.Master) error {
 	return nil
 }
 
-type RemoteMaster struct {
-	RemoteSlave
+type Master struct {
+	*Slave
 }
 
-func (master *RemoteMaster) Cluster() ([]nodes.Node, error) {
+func (master *Master) Cluster() ([]nodes.Node, error) {
 	if err := master.keepConnectionAlive(); err != nil {
 		return nil, err
 	}
@@ -320,7 +314,7 @@ func (master *RemoteMaster) Cluster() ([]nodes.Node, error) {
 	return nodes, nil
 }
 
-func (master *RemoteMaster) Replicas() ([]nodes.Master, error) {
+func (master *Master) Replicas() ([]nodes.Master, error) {
 	if err := master.keepConnectionAlive(); err != nil {
 		return nil, err
 	}
@@ -335,7 +329,7 @@ func (master *RemoteMaster) Replicas() ([]nodes.Master, error) {
 	return replicas, nil
 }
 
-func (slave *RemoteSlave) Role() (nodes.Role, error) {
+func (slave *Slave) Role() (nodes.Role, error) {
 	if err := slave.keepConnectionAlive(); err != nil {
 		return nodes.RoleSlave, err
 	}
@@ -353,7 +347,7 @@ func (slave *RemoteSlave) Role() (nodes.Role, error) {
 	}
 }
 
-func (slave *RemoteSlave) Close() {
+func (slave *Slave) Close() {
 	if slave.remoteStatus() != StatusDown {
 		if slave.Connection != nil {
 			slave.Connection.Close()
@@ -362,7 +356,7 @@ func (slave *RemoteSlave) Close() {
 	}
 }
 
-func (master *RemoteMaster) Join(n nodes.Node) error {
+func (master *Master) Join(n nodes.Node) error {
 	if err := master.keepConnectionAlive(); err != nil {
 		return err
 	}
@@ -376,10 +370,10 @@ func (master *RemoteMaster) Join(n nodes.Node) error {
 	return nil
 }
 
-func NewMaster(addr string) Master {
-	return &RemoteMaster{RemoteSlave{PublicAddress: addr}}
+func NewMaster(addr string) *Master {
+	return &Master{NewSlave(addr)}
 }
 
-func NewSlave(addr string) Slave {
-	return &RemoteSlave{PublicAddress: addr}
+func NewSlave(addr string) *Slave {
+	return &Slave{PublicAddress: addr}
 }
