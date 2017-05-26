@@ -7,6 +7,13 @@ import (
 	"github.com/lnsp/dkvs/nodes"
 )
 
+func NewReplicaSet(nodes ...nodes.Master) *ReplicaSet {
+	return &ReplicaSet{
+		replicas: nodes,
+		lock:     sync.Mutex{},
+	}
+}
+
 type ReplicaSet struct {
 	replicas []nodes.Master
 	lock     sync.Mutex
@@ -20,18 +27,16 @@ func (lr *ReplicaSet) Set(repl []nodes.Master) {
 
 func (lr *ReplicaSet) Trial(f func(nodes.Master) error) error {
 	if lr.replicas == nil {
-		return errors.New("No replicas available")
+		return errors.New("Replica set not initiated")
 	}
 
 	lr.lock.Lock()
 	defer lr.lock.Unlock()
 	for _, n := range lr.replicas {
-		if n.Status() != nodes.StatusDown {
-			if err := f(n); err != nil {
-				continue
-			}
-			return nil
+		if err := f(n); err != nil {
+			continue
 		}
+		return nil
 	}
-	return errors.New("No replica available")
+	return errors.New("No replicas available")
 }
