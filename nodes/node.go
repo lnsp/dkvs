@@ -28,7 +28,7 @@ type Node interface {
 	Revision() (Revision, error)
 	Address() string
 	Role() (Role, error)
-	Own(m Master) error
+	Rebuild() error
 }
 
 type Slave interface {
