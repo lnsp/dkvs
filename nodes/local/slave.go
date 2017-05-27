@@ -7,9 +7,29 @@ import (
 	"strings"
 
 	"github.com/lnsp/dkvs/nodes"
+	"github.com/lnsp/dkvs/nodes/local/hashtable"
 	"github.com/lnsp/dkvs/nodes/local/replicas"
 	"github.com/lnsp/dkvs/nodes/remote"
 )
+
+var (
+	errNotAvailable = errors.New("This command is not available")
+)
+
+func (slave *Slave) ready() {
+	slave.NodeStatus = nodes.StatusReady
+}
+
+func (slave *Slave) joinExistingCluster() {
+	slave.ready()
+	master := slave.ReplicaSet.Item()
+	if err := master.Join(slave); err != nil {
+		return
+	}
+	if err := slave.Rebuild(); err != nil {
+		return
+	}
+}
 
 // local handles commands that share their behaviour on both slave and master instances.
 func (slave *Slave) local(cmd *remote.Command, m remote.Node) error {
@@ -113,7 +133,7 @@ func (slave *Slave) local(cmd *remote.Command, m remote.Node) error {
 	} else if cmd.KindOf(remote.CommandMirror) {
 		// mirror tells the node to mirror another node's local data
 		// SYNTAX: MIRROR -> MIRROR#OK
-		peers := make([]nodes.Slave, cmd.ArgCount())
+		peers := make([]nodes.Node, cmd.ArgCount())
 		for i, host := range cmd.ArgList() {
 			peers[i] = remote.NewSlave(host)
 		}
@@ -143,7 +163,7 @@ func (slave *Slave) local(cmd *remote.Command, m remote.Node) error {
 		}
 		return nil
 	}
-	return errors.New("Command context not local")
+	return errNotAvailable
 }
 
 func (slave *Slave) handle(m *remote.Slave) error {
@@ -241,7 +261,7 @@ func (slave *Slave) handle(m *remote.Slave) error {
 				continue
 			}
 			if err := m.Push(remote.CommandJoin.Param(remote.JoinOK)); err != nil {
-				continue
+				return err
 			}
 		} else if cmd.KindOf(remote.CommandAssist) {
 			// assist tells one of the masters that the call node wants to join the replica set as a master.
@@ -254,7 +274,7 @@ func (slave *Slave) handle(m *remote.Slave) error {
 				continue
 			}
 			if err := m.Push(remote.CommandAssist.Param(remote.AssistOK)); err != nil {
-				continue
+				return err
 			}
 		} else {
 			// check for other common commands
@@ -346,21 +366,6 @@ func (slave *Slave) Revision(rev nodes.Revision) (nodes.Revision, error) {
 	return slave.Latest, nil
 }
 
-func (slave *Slave) ready() {
-	slave.NodeStatus = nodes.StatusReady
-}
-
-func (slave *Slave) joinExistingCluster() {
-	slave.ready()
-	master := slave.ReplicaSet.Item()
-	if err := master.Join(slave); err != nil {
-		return
-	}
-	if err := slave.Rebuild(); err != nil {
-		return
-	}
-}
-
 func (slave *Slave) Listen() error {
 	listener, err := net.Listen("tcp", slave.PublicAddress)
 	if err != nil {
@@ -390,7 +395,7 @@ func (slave *Slave) Address() string {
 	return slave.PublicAddress
 }
 
-func (slave *Slave) Mirror(peers []nodes.Slave) error {
+func (slave *Slave) Mirror(peers []nodes.Node) error {
 	for _, peer := range peers {
 		if peer.Address() == slave.Address() {
 			continue
@@ -439,7 +444,7 @@ func NewSlave(local, rmt string) *Slave {
 		ReplicaSet:    replicas.New(),
 		Latest:        []byte{},
 		KeepAlive:     true,
-		Entries:       NewMap(),
+		Entries:       hashtable.New(),
 		NodeStatus:    nodes.StatusStartup,
 	}
 	if rmt != "" {

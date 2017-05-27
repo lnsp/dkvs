@@ -364,12 +364,12 @@ type Master struct {
 	*Slave
 }
 
-func (master *Master) Cluster() ([]nodes.Slave, error) {
+func (master *Master) Cluster() ([]nodes.Node, error) {
 	response, err := master.Queue(CommandCluster)
 	if err != nil {
 		return nil, err
 	}
-	nodes := make([]nodes.Slave, response.ArgCount())
+	nodes := make([]nodes.Node, response.ArgCount())
 	for i := 0; i < response.ArgCount(); i++ {
 		nodes[i] = NewSlave(response.Arg(i))
 	}
@@ -419,7 +419,7 @@ func (slave *Slave) Keys() ([]string, error) {
 	return response.ArgList(), nil
 }
 
-func (slave *Slave) Mirror(peers []nodes.Slave) error {
+func (slave *Slave) Mirror(peers []nodes.Node) error {
 	addrs := make([]string, len(peers))
 	for i := range addrs {
 		addrs[i] = peers[i].Address()
@@ -444,7 +444,7 @@ func (slave *Slave) Close() {
 	}
 }
 
-func (master *Master) Join(n nodes.Slave) error {
+func (master *Master) Join(n nodes.Node) error {
 	response, err := master.Queue(CommandJoin.Param(n.Address()))
 	if err != nil {
 		return err

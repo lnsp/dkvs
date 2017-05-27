@@ -3,6 +3,7 @@ package local
 import (
 	"github.com/lnsp/dkvs/nodes"
 	"github.com/lnsp/dkvs/nodes/local/cluster"
+	"github.com/lnsp/dkvs/nodes/local/hashtable"
 	"github.com/lnsp/dkvs/nodes/local/replicas"
 )
 
@@ -15,7 +16,7 @@ type Slave struct {
 	ReplicaSet    replicas.Set
 	Latest        nodes.Revision
 	KeepAlive     bool
-	Entries       Map
+	Entries       hashtable.Map
 	NodeStatus    nodes.Status
 }
 
