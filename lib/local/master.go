@@ -63,10 +63,14 @@ func (master *Master) handle(m *remote.Slave) error {
 			return err
 		}
 		if cmd.KindOf(remote.CommandCluster) {
+			// cluster collects all cluster node IPs and replies them.
+			// SYNTAX: CLUSTER -> CLUSTER#NODE1;NODE2;NODE3;...
 			if err := m.Push(cmd.Param(master.ClusterSet.Collect()...)); err != nil {
 				m.Push(remote.Error(err))
 			}
 		} else if cmd.KindOf(remote.CommandKeys) {
+			// keys collects all keys in the cluster and replies them.
+			// SYNTAX: KEYS -> KEYS#KEY1;KEY2;KEY3;...
 			keys, err := master.keysInCluster()
 			if err != nil {
 				m.Push(remote.Error(err))
@@ -76,6 +80,8 @@ func (master *Master) handle(m *remote.Slave) error {
 				return err
 			}
 		} else if cmd.KindOf(remote.CommandJoin) {
+			// join tells the master that a slave wants to join in.
+			// SYNTAX: JOIN#SLAVE-IP -> JOIN#OK
 			slave := remote.NewSlave(cmd.Arg(0))
 			if err := master.Join(slave); err != nil {
 				m.Push(remote.Error(err))
@@ -85,6 +91,8 @@ func (master *Master) handle(m *remote.Slave) error {
 				return err
 			}
 		} else if cmd.KindOf(remote.CommandAssist) {
+			// assist tells the master that a secondary master wants to help out.
+			// SYNTAX: ASSIST#MASTER-IP -> ASSIST#OK
 			peer := remote.NewMaster(cmd.Arg(0))
 			if err := master.Assist(peer); err != nil {
 				m.Push(remote.Error(err))
@@ -94,6 +102,8 @@ func (master *Master) handle(m *remote.Slave) error {
 				return err
 			}
 		} else if cmd.KindOf(remote.CommandRead) {
+			// read pulls the key-value pair from the cluster and spills it out.
+			// SYNTAX: READ#KEY -> READ#VALUE;REVISION
 			key := cmd.Arg(0)
 			value, revision, err := master.Read(key)
 			if err != nil {
@@ -104,6 +114,11 @@ func (master *Master) handle(m *remote.Slave) error {
 				return err
 			}
 		} else if cmd.KindOf(remote.CommandStore) {
+			// store puts the key-value pair in the cluster.
+			// SYNTAX: STORE#KEY;VALUE -> STORE#OK
+			// the revision key gets fetched from the cluster's state store.
+			// SYNTAX: STORE#KEY;VALUE;REVISION -> STORE#OK
+			// the given revision will be used to store the pair in the cluster.
 			key, value, suggested := cmd.Arg(0), cmd.Arg(1), cmd.Arg(2)
 			valid, err := master.parseOptionalRevision(suggested)
 			if err != nil {
@@ -115,40 +130,6 @@ func (master *Master) handle(m *remote.Slave) error {
 				continue
 			}
 			if err := m.Push(cmd.Param(remote.StoreOK)); err != nil {
-				return err
-			}
-		} else if cmd.KindOf(remote.CommandLocalStore) {
-			key, value, revString := cmd.Arg(0), cmd.Arg(1), cmd.Arg(2)
-			rev, err := lib.ToRevision(revString)
-			if err != nil {
-				m.Push(remote.Error(err))
-				continue
-			}
-			if err := master.LocalStore(key, value, rev); err != nil {
-				m.Push(remote.Error(err))
-				continue
-			}
-			if err := m.Push(cmd.Param(remote.StoreOK)); err != nil {
-				return err
-			}
-		} else if cmd.KindOf(remote.CommandRead) {
-			key := cmd.Arg(0)
-			value, revision, err := master.Read(key)
-			if err != nil {
-				m.Push(remote.Error(err))
-				continue
-			}
-			if err := m.Push(cmd.Param(value, revision.String())); err != nil {
-				return err
-			}
-		} else if cmd.KindOf(remote.CommandLocalRead) {
-			key := cmd.Arg(0)
-			val, rev, err := master.LocalRead(key)
-			if err != nil {
-				m.Push(remote.Error(err))
-				continue
-			}
-			if err := m.Push(cmd.Param(val, rev.String())); err != nil {
 				return err
 			}
 		} else {

@@ -155,6 +155,34 @@ func (slave *Slave) local(cmd *remote.Command, m remote.Node) error {
 			return err
 		}
 		return nil
+	} else if cmd.KindOf(remote.CommandLocalStore) {
+		// store_local stores a key-value-revision set locally.
+		// it refuses to store it if the local version has a higher revision number.
+		// SYNTAX: STORE_LOCAL#KEY;VALUE;REVISION -> STORE_LOCAL#OK
+		key, value, revString := cmd.Arg(0), cmd.Arg(1), cmd.Arg(2)
+		rev, err := lib.ToRevision(revString)
+		if err != nil {
+			return err
+		}
+		if err := slave.LocalStore(key, value, rev); err != nil {
+			return err
+		}
+		if err := m.Push(cmd.Param(remote.StoreOK)); err != nil {
+			return err
+		}
+		return nil
+	} else if cmd.KindOf(remote.CommandLocalRead) {
+		// read_local reads from the local key-value store.
+		// SYNTAX: READ_LOCAL#KEY -> READ_LOCAL#VALUE;REVISION
+		key := cmd.Arg(0)
+		val, rev, err := slave.LocalRead(key)
+		if err != nil {
+			return err
+		}
+		if err := m.Push(cmd.Param(val, rev.String())); err != nil {
+			return err
+		}
+		return nil
 	} else if cmd.KindOf(remote.CommandHandshake) {
 		// handshake does nothing. it's there to check connection state.
 		// SYNTAX: HANDSHAKE -> HANDSHAKE#OK
@@ -219,35 +247,6 @@ func (slave *Slave) handle(m *remote.Slave) error {
 				continue
 			}
 			if err := m.Push(cmd.Param(value, revision.String())); err != nil {
-				return err
-			}
-		} else if cmd.KindOf(remote.CommandLocalStore) {
-			// store_local stores a key-value-revision set locally.
-			// it refuses to store it if the local version has a higher revision number.
-			// SYNTAX: STORE_LOCAL#KEY;VALUE;REVISION -> STORE_LOCAL#OK
-			key, value, revString := cmd.Arg(0), cmd.Arg(1), cmd.Arg(2)
-			rev, err := lib.ToRevision(revString)
-			if err != nil {
-				m.Push(remote.Error(err))
-				continue
-			}
-			if err := slave.LocalStore(key, value, rev); err != nil {
-				m.Push(remote.Error(err))
-				continue
-			}
-			if err := m.Push(cmd.Param(remote.StoreOK)); err != nil {
-				return err
-			}
-		} else if cmd.KindOf(remote.CommandLocalRead) {
-			// read_local reads from the local key-value store.
-			// SYNTAX: READ_LOCAL#KEY -> READ_LOCAL#VALUE;REVISION
-			key := cmd.Arg(0)
-			val, rev, err := slave.LocalRead(key)
-			if err != nil {
-				m.Push(remote.Error(err))
-				continue
-			}
-			if err := m.Push(cmd.Param(val, rev.String())); err != nil {
 				return err
 			}
 		} else if cmd.KindOf(remote.CommandJoin) {
