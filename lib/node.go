@@ -1,4 +1,4 @@
-package nodes
+package lib
 
 import (
 	"encoding/base64"

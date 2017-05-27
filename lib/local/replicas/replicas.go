@@ -4,7 +4,7 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/lnsp/dkvs/nodes"
+	"github.com/lnsp/dkvs/lib"
 )
 
 var (
@@ -13,18 +13,18 @@ var (
 )
 
 type Set interface {
-	Join(nodes.Master)
-	Set([]nodes.Master)
-	All(func(nodes.Master) error) error
-	Has(nodes.Master) bool
-	Item() nodes.Master
-	Trial(func(nodes.Master) error) error
-	Instance() []nodes.Master
+	Join(lib.Master)
+	Set([]lib.Master)
+	All(func(lib.Master) error) error
+	Has(lib.Master) bool
+	Item() lib.Master
+	Trial(func(lib.Master) error) error
+	Instance() []lib.Master
 	Collect() []string
 	Size() int
 }
 
-func New(nodes ...nodes.Master) Set {
+func New(nodes ...lib.Master) Set {
 	return &replicaSet{
 		replicas: nodes,
 		lock:     sync.Mutex{},
@@ -32,7 +32,7 @@ func New(nodes ...nodes.Master) Set {
 }
 
 type replicaSet struct {
-	replicas []nodes.Master
+	replicas []lib.Master
 	lock     sync.Mutex
 }
 
@@ -42,11 +42,11 @@ func (lr *replicaSet) Size() int {
 	return len(lr.replicas)
 }
 
-func (lr *replicaSet) Set(repl []nodes.Master) {
+func (lr *replicaSet) Set(repl []lib.Master) {
 	lr.lock.Lock()
-	copy := make([]nodes.Master, 0, len(lr.replicas)+len(repl))
+	copy := make([]lib.Master, 0, len(lr.replicas)+len(repl))
 	for _, n := range repl {
-		var e nodes.Master
+		var e lib.Master
 		for _, p := range lr.replicas {
 			if n.Address() == p.Address() {
 				e = p
@@ -62,13 +62,13 @@ func (lr *replicaSet) Set(repl []nodes.Master) {
 	lr.lock.Unlock()
 }
 
-func (lr *replicaSet) Join(n nodes.Master) {
+func (lr *replicaSet) Join(n lib.Master) {
 	lr.lock.Lock()
 	lr.replicas = append(lr.replicas, n)
 	lr.lock.Unlock()
 }
 
-func (lr *replicaSet) All(f func(n nodes.Master) error) error {
+func (lr *replicaSet) All(f func(n lib.Master) error) error {
 	count := 0
 	copy := lr.Instance()
 	e := errNoReplicas
@@ -86,7 +86,7 @@ func (lr *replicaSet) All(f func(n nodes.Master) error) error {
 	return nil
 }
 
-func (lr *replicaSet) Has(n nodes.Master) bool {
+func (lr *replicaSet) Has(n lib.Master) bool {
 	copy := lr.Instance()
 	addr := n.Address()
 	for _, n := range copy {
@@ -96,7 +96,7 @@ func (lr *replicaSet) Has(n nodes.Master) bool {
 	}
 	return false
 }
-func (lr *replicaSet) Item() nodes.Master {
+func (lr *replicaSet) Item() lib.Master {
 	lr.lock.Lock()
 	defer lr.lock.Unlock()
 	if len(lr.replicas) < 1 {
@@ -105,7 +105,7 @@ func (lr *replicaSet) Item() nodes.Master {
 	return lr.replicas[0]
 }
 
-func (lr *replicaSet) Trial(f func(nodes.Master) error) error {
+func (lr *replicaSet) Trial(f func(lib.Master) error) error {
 	if lr.replicas == nil {
 		return errNotInitiated
 	}
@@ -132,10 +132,10 @@ func (lr *replicaSet) Collect() []string {
 	return addrs
 }
 
-func (lr *replicaSet) Instance() []nodes.Master {
+func (lr *replicaSet) Instance() []lib.Master {
 	lr.lock.Lock()
 	defer lr.lock.Unlock()
-	copy := make([]nodes.Master, len(lr.replicas))
+	copy := make([]lib.Master, len(lr.replicas))
 	for i, r := range lr.replicas {
 		copy[i] = r
 	}

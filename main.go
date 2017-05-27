@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/lnsp/dkvs/nodes/local"
+	"github.com/lnsp/dkvs/lib/local"
 )
 
 const (

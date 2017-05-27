@@ -1,10 +1,10 @@
 package local
 
 import (
-	"github.com/lnsp/dkvs/nodes"
-	"github.com/lnsp/dkvs/nodes/local/cluster"
-	"github.com/lnsp/dkvs/nodes/local/hashtable"
-	"github.com/lnsp/dkvs/nodes/local/replicas"
+	"github.com/lnsp/dkvs/lib"
+	"github.com/lnsp/dkvs/lib/local/cluster"
+	"github.com/lnsp/dkvs/lib/local/hashtable"
+	"github.com/lnsp/dkvs/lib/local/replicas"
 )
 
 type Node interface {
@@ -14,10 +14,10 @@ type Node interface {
 type Slave struct {
 	PublicAddress string
 	ReplicaSet    replicas.Set
-	Latest        nodes.Revision
+	Latest        lib.Revision
 	KeepAlive     bool
 	Entries       hashtable.Map
-	NodeStatus    nodes.Status
+	NodeStatus    lib.Status
 }
 
 type Master struct {

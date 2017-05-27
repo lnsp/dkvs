@@ -6,10 +6,10 @@ import (
 	"net"
 	"strings"
 
-	"github.com/lnsp/dkvs/nodes"
-	"github.com/lnsp/dkvs/nodes/local/hashtable"
-	"github.com/lnsp/dkvs/nodes/local/replicas"
-	"github.com/lnsp/dkvs/nodes/remote"
+	"github.com/lnsp/dkvs/lib"
+	"github.com/lnsp/dkvs/lib/local/hashtable"
+	"github.com/lnsp/dkvs/lib/local/replicas"
+	"github.com/lnsp/dkvs/lib/remote"
 )
 
 var (
@@ -17,7 +17,7 @@ var (
 )
 
 func (slave *Slave) ready() {
-	slave.NodeStatus = nodes.StatusReady
+	slave.NodeStatus = lib.StatusReady
 }
 
 func (slave *Slave) joinExistingCluster() {
@@ -40,24 +40,24 @@ func (slave *Slave) local(cmd *remote.Command, m remote.Node) error {
 		if cmd.ArgCount() > 0 {
 			switch cmd.Arg(0) {
 			case remote.StatusDown:
-				slave.NodeStatus = nodes.StatusDown
+				slave.NodeStatus = lib.StatusDown
 			case remote.StatusReady:
-				slave.NodeStatus = nodes.StatusReady
+				slave.NodeStatus = lib.StatusReady
 			case remote.StatusShutdown:
-				slave.NodeStatus = nodes.StatusShutdown
+				slave.NodeStatus = lib.StatusShutdown
 			case remote.StatusStartup:
-				slave.NodeStatus = nodes.StatusStartup
+				slave.NodeStatus = lib.StatusStartup
 			}
 		}
 		stat := remote.StatusDown
 		switch slave.Status() {
-		case nodes.StatusDown:
+		case lib.StatusDown:
 			stat = remote.StatusDown
-		case nodes.StatusReady:
+		case lib.StatusReady:
 			stat = remote.StatusReady
-		case nodes.StatusShutdown:
+		case lib.StatusShutdown:
 			stat = remote.StatusShutdown
-		case nodes.StatusStartup:
+		case lib.StatusStartup:
 			stat = remote.StatusStartup
 		}
 		if err := m.Push(cmd.Param(stat)); err != nil {
@@ -82,9 +82,9 @@ func (slave *Slave) local(cmd *remote.Command, m remote.Node) error {
 		// retrieve the latest revision
 		// SYNTAX: revision#rev-code -> REVISION#LATEST-REVISION
 		// retrieve the latest revision, if the given rev-code is newer, latest revision is updated
-		var rev nodes.Revision
+		var rev lib.Revision
 		if cmd.ArgCount() > 0 {
-			arg, err := nodes.ToRevision(cmd.Arg(0))
+			arg, err := lib.ToRevision(cmd.Arg(0))
 			if err != nil {
 				return err
 			}
@@ -104,11 +104,11 @@ func (slave *Slave) local(cmd *remote.Command, m remote.Node) error {
 		remoteRole := remote.RoleSlave
 		role, _ := slave.Role()
 		switch role {
-		case nodes.RoleMasterPrimary:
+		case lib.RoleMasterPrimary:
 			remoteRole = remote.RoleMasterPrimary
-		case nodes.RoleMaster:
+		case lib.RoleMaster:
 			remoteRole = remote.RoleMaster
-		case nodes.RoleSlave:
+		case lib.RoleSlave:
 			remoteRole = remote.RoleSlave
 		}
 		if err := m.Push(cmd.Param(remoteRole)); err != nil {
@@ -133,7 +133,7 @@ func (slave *Slave) local(cmd *remote.Command, m remote.Node) error {
 	} else if cmd.KindOf(remote.CommandMirror) {
 		// mirror tells the node to mirror another node's local data
 		// SYNTAX: MIRROR -> MIRROR#OK
-		peers := make([]nodes.Node, cmd.ArgCount())
+		peers := make([]lib.Node, cmd.ArgCount())
 		for i, host := range cmd.ArgList() {
 			peers[i] = remote.NewSlave(host)
 		}
@@ -181,16 +181,16 @@ func (slave *Slave) handle(m *remote.Slave) error {
 			// SYNTAX: STORE#KEY;VALUE;REVISION -> STORE#OK
 			// uses the given revision information to commit the change
 			key, value, revString := cmd.Arg(0), cmd.Arg(1), cmd.Arg(2)
-			var result nodes.Revision
+			var result lib.Revision
 			if revString != "" {
-				storeRev, err := nodes.ToRevision(revString)
+				storeRev, err := lib.ToRevision(revString)
 				if err != nil {
 					m.Push(remote.Error(err))
 					continue
 				}
 				result = storeRev
 			} else {
-				if err := slave.ReplicaSet.Trial(func(m nodes.Master) error {
+				if err := slave.ReplicaSet.Trial(func(m lib.Master) error {
 					rev, err := m.Revision(nil)
 					if err != nil {
 						return err
@@ -226,7 +226,7 @@ func (slave *Slave) handle(m *remote.Slave) error {
 			// it refuses to store it if the local version has a higher revision number.
 			// SYNTAX: STORE_LOCAL#KEY;VALUE;REVISION -> STORE_LOCAL#OK
 			key, value, revString := cmd.Arg(0), cmd.Arg(1), cmd.Arg(2)
-			rev, err := nodes.ToRevision(revString)
+			rev, err := lib.ToRevision(revString)
 			if err != nil {
 				m.Push(remote.Error(err))
 				continue
@@ -254,7 +254,7 @@ func (slave *Slave) handle(m *remote.Slave) error {
 			// join tells one of the masters that the call node wants to join the cluster as a store.
 			// SYNTAX: JOIN#STORE-ADDRESS -> JOIN#OK
 			slv := remote.NewSlave(cmd.Arg(0))
-			if err := slave.ReplicaSet.Trial(func(master nodes.Master) error {
+			if err := slave.ReplicaSet.Trial(func(master lib.Master) error {
 				return master.Join(slv)
 			}); err != nil {
 				m.Push(remote.Error(err))
@@ -267,7 +267,7 @@ func (slave *Slave) handle(m *remote.Slave) error {
 			// assist tells one of the masters that the call node wants to join the replica set as a master.
 			// SYNTAX: ASSIST#MASTER-ADDRESS -> ASSIST#OK
 			ast := remote.NewMaster(cmd.Arg(0))
-			if err := slave.ReplicaSet.Trial(func(master nodes.Master) error {
+			if err := slave.ReplicaSet.Trial(func(master lib.Master) error {
 				return master.Assist(ast)
 			}); err != nil {
 				m.Push(remote.Error(err))
@@ -288,7 +288,7 @@ func (slave *Slave) handle(m *remote.Slave) error {
 }
 
 func (slave *Slave) Rebuild() error {
-	slave.ReplicaSet.Trial(func(n nodes.Master) error {
+	slave.ReplicaSet.Trial(func(n lib.Master) error {
 		replicas, err := n.Replicas()
 		if err != nil {
 			return err
@@ -299,13 +299,13 @@ func (slave *Slave) Rebuild() error {
 	return nil
 }
 
-func (slave *Slave) Store(key, value string, rev nodes.Revision) error {
-	return slave.ReplicaSet.Trial(func(m nodes.Master) error {
+func (slave *Slave) Store(key, value string, rev lib.Revision) error {
+	return slave.ReplicaSet.Trial(func(m lib.Master) error {
 		return m.Store(key, value, rev)
 	})
 }
 
-func (slave *Slave) LocalStore(key, value string, rev nodes.Revision) error {
+func (slave *Slave) LocalStore(key, value string, rev lib.Revision) error {
 	if rev.IsNewer(slave.Latest) {
 		slave.Latest = rev
 	}
@@ -316,12 +316,12 @@ func (slave *Slave) LocalStore(key, value string, rev nodes.Revision) error {
 	return nil
 }
 
-func (slave *Slave) Read(key string) (string, nodes.Revision, error) {
+func (slave *Slave) Read(key string) (string, lib.Revision, error) {
 	var (
 		value    string
-		revision nodes.Revision
+		revision lib.Revision
 	)
-	if err := slave.ReplicaSet.Trial(func(m nodes.Master) error {
+	if err := slave.ReplicaSet.Trial(func(m lib.Master) error {
 		val, rev, err := m.Read(key)
 		if err != nil {
 			return err
@@ -335,7 +335,7 @@ func (slave *Slave) Read(key string) (string, nodes.Revision, error) {
 	return value, revision, nil
 }
 
-func (slave *Slave) LocalRead(key string) (string, nodes.Revision, error) {
+func (slave *Slave) LocalRead(key string) (string, lib.Revision, error) {
 	val, rev, ok := slave.Entries.Read(key)
 	if !ok {
 		return key, nil, errors.New("Key not found")
@@ -343,7 +343,7 @@ func (slave *Slave) LocalRead(key string) (string, nodes.Revision, error) {
 	return val, rev, nil
 }
 
-func (slave *Slave) Status() nodes.Status {
+func (slave *Slave) Status() lib.Status {
 	return slave.NodeStatus
 }
 
@@ -355,11 +355,11 @@ func (slave *Slave) Shutdown() error {
 	return nil
 }
 
-func (slave *Slave) Role() (nodes.Role, error) {
-	return nodes.RoleSlave, nil
+func (slave *Slave) Role() (lib.Role, error) {
+	return lib.RoleSlave, nil
 }
 
-func (slave *Slave) Revision(rev nodes.Revision) (nodes.Revision, error) {
+func (slave *Slave) Revision(rev lib.Revision) (lib.Revision, error) {
 	if rev != nil && rev.IsNewer(slave.Latest) {
 		slave.Latest = rev
 	}
@@ -395,7 +395,7 @@ func (slave *Slave) Address() string {
 	return slave.PublicAddress
 }
 
-func (slave *Slave) Mirror(peers []nodes.Node) error {
+func (slave *Slave) Mirror(peers []lib.Node) error {
 	for _, peer := range peers {
 		if peer.Address() == slave.Address() {
 			continue
@@ -421,7 +421,7 @@ func (slave *Slave) Mirror(peers []nodes.Node) error {
 
 func (slave *Slave) Keys() ([]string, error) {
 	var keys []string
-	if err := slave.ReplicaSet.Trial(func(master nodes.Master) error {
+	if err := slave.ReplicaSet.Trial(func(master lib.Master) error {
 		k, err := master.Keys()
 		if err != nil {
 			return err
@@ -445,7 +445,7 @@ func NewSlave(local, rmt string) *Slave {
 		Latest:        []byte{},
 		KeepAlive:     true,
 		Entries:       hashtable.New(),
-		NodeStatus:    nodes.StatusStartup,
+		NodeStatus:    lib.StatusStartup,
 	}
 	if rmt != "" {
 		slave.ReplicaSet.Join(remote.NewMaster(rmt))

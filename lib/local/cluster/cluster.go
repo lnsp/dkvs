@@ -4,7 +4,7 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/lnsp/dkvs/nodes"
+	"github.com/lnsp/dkvs/lib"
 )
 
 var (
@@ -13,23 +13,23 @@ var (
 )
 
 type Set interface {
-	Join(nodes.Node)
-	Set([]nodes.Node)
+	Join(lib.Node)
+	Set([]lib.Node)
 	Collect() []string
 	Union(Set)
-	All(func(nodes.Node) error) error
-	FilterSelected([]int, func(nodes.Node) bool) Set
-	Selected([]int, func(nodes.Node) error) error
-	Trial(func(nodes.Node) error) error
-	TrialSelected([]int, func(nodes.Node) error) error
+	All(func(lib.Node) error) error
+	FilterSelected([]int, func(lib.Node) bool) Set
+	Selected([]int, func(lib.Node) error) error
+	Trial(func(lib.Node) error) error
+	TrialSelected([]int, func(lib.Node) error) error
 	Size() int
-	Has(nodes.Node) bool
-	Instance() []nodes.Node
+	Has(lib.Node) bool
+	Instance() []lib.Node
 }
 
-func New(slaves ...nodes.Node) Set {
+func New(slaves ...lib.Node) Set {
 	if slaves == nil {
-		slaves = make([]nodes.Node, 0)
+		slaves = make([]lib.Node, 0)
 	}
 
 	return &clusterSet{
@@ -39,28 +39,28 @@ func New(slaves ...nodes.Node) Set {
 }
 
 type clusterSet struct {
-	slaves      []nodes.Node
+	slaves      []lib.Node
 	lock        sync.Mutex
 	replication int
 }
 
 func (lr *clusterSet) Union(set Set) {
 	lr.lock.Lock()
-	union := make(map[string]nodes.Node)
+	union := make(map[string]lib.Node)
 	for _, s := range lr.slaves {
 		key := s.Address()
 		if _, ok := union[key]; !ok {
 			union[key] = s
 		}
 	}
-	set.All(func(s nodes.Node) error {
+	set.All(func(s lib.Node) error {
 		key := s.Address()
 		if _, ok := union[key]; !ok {
 			union[key] = s
 		}
 		return nil
 	})
-	keys := make([]nodes.Node, len(union))
+	keys := make([]lib.Node, len(union))
 	i := 0
 	for _, s := range union {
 		keys[i] = s
@@ -70,17 +70,17 @@ func (lr *clusterSet) Union(set Set) {
 	lr.Set(keys)
 }
 
-func (lr *clusterSet) Join(slave nodes.Node) {
+func (lr *clusterSet) Join(slave lib.Node) {
 	lr.lock.Lock()
 	lr.slaves = append(lr.slaves, slave)
 	lr.lock.Unlock()
 }
 
-func (lr *clusterSet) Set(slaves []nodes.Node) {
+func (lr *clusterSet) Set(slaves []lib.Node) {
 	lr.lock.Lock()
-	copy := make([]nodes.Node, 0, len(lr.slaves)+len(slaves))
+	copy := make([]lib.Node, 0, len(lr.slaves)+len(slaves))
 	for _, n := range slaves {
-		var e nodes.Node
+		var e lib.Node
 		if lr.slaves != nil {
 			for _, p := range lr.slaves {
 				if n.Address() == p.Address() {
@@ -108,16 +108,16 @@ func (lr *clusterSet) Collect() []string {
 	return addrs
 }
 
-func (lr *clusterSet) All(f func(nodes.Node) error) error {
+func (lr *clusterSet) All(f func(lib.Node) error) error {
 	return lr.Selected(nil, f)
 }
 
-func (lr *clusterSet) FilterSelected(id []int, f func(nodes.Node) bool) Set {
+func (lr *clusterSet) FilterSelected(id []int, f func(lib.Node) bool) Set {
 	if lr.slaves == nil {
 		return nil
 	}
 	copy := lr.Instance()
-	results := make([]nodes.Node, 0, len(copy))
+	results := make([]lib.Node, 0, len(copy))
 	for _, c := range copy {
 		if f(c) {
 			results = append(results, c)
@@ -127,7 +127,7 @@ func (lr *clusterSet) FilterSelected(id []int, f func(nodes.Node) bool) Set {
 	return New(results...)
 }
 
-func (lr *clusterSet) Selected(id []int, f func(nodes.Node) error) error {
+func (lr *clusterSet) Selected(id []int, f func(lib.Node) error) error {
 	if lr.slaves == nil {
 		return errNotInitiated
 	}
@@ -153,11 +153,11 @@ func (lr *clusterSet) Selected(id []int, f func(nodes.Node) error) error {
 	return nil
 }
 
-func (lr *clusterSet) Trial(f func(nodes.Node) error) error {
+func (lr *clusterSet) Trial(f func(lib.Node) error) error {
 	return lr.TrialSelected(nil, f)
 }
 
-func (lr *clusterSet) TrialSelected(id []int, f func(nodes.Node) error) error {
+func (lr *clusterSet) TrialSelected(id []int, f func(lib.Node) error) error {
 	if lr.slaves == nil {
 		return errors.New("Cluster set not initiated")
 	}
@@ -195,7 +195,7 @@ func (lr *clusterSet) Size() int {
 	return len(lr.slaves)
 }
 
-func (lr *clusterSet) Has(i nodes.Node) bool {
+func (lr *clusterSet) Has(i lib.Node) bool {
 	copy := lr.Instance()
 	addr := i.Address()
 	for _, s := range copy {
@@ -206,10 +206,10 @@ func (lr *clusterSet) Has(i nodes.Node) bool {
 	return false
 }
 
-func (lr *clusterSet) Instance() []nodes.Node {
+func (lr *clusterSet) Instance() []lib.Node {
 	lr.lock.Lock()
 	defer lr.lock.Unlock()
-	copy := make([]nodes.Node, len(lr.slaves))
+	copy := make([]lib.Node, len(lr.slaves))
 	for i, s := range lr.slaves {
 		copy[i] = s
 	}

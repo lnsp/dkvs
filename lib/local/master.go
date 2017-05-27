@@ -6,20 +6,20 @@ import (
 
 	"hash/fnv"
 
-	"github.com/lnsp/dkvs/nodes"
-	"github.com/lnsp/dkvs/nodes/local/cluster"
-	"github.com/lnsp/dkvs/nodes/local/hashtable"
-	"github.com/lnsp/dkvs/nodes/local/replicas"
-	"github.com/lnsp/dkvs/nodes/remote"
+	"github.com/lnsp/dkvs/lib"
+	"github.com/lnsp/dkvs/lib/local/cluster"
+	"github.com/lnsp/dkvs/lib/local/hashtable"
+	"github.com/lnsp/dkvs/lib/local/replicas"
+	"github.com/lnsp/dkvs/lib/remote"
 )
 
 var (
 	errSameInstance = errors.New("Same master instance")
 )
 
-func (master *Master) parseOptionalRevision(rev string) (nodes.Revision, error) {
+func (master *Master) parseOptionalRevision(rev string) (lib.Revision, error) {
 	if rev != "" {
-		given, err := nodes.ToRevision(rev)
+		given, err := lib.ToRevision(rev)
 		if err != nil {
 			return nil, err
 		}
@@ -34,7 +34,7 @@ func (master *Master) parseOptionalRevision(rev string) (nodes.Revision, error) 
 
 func (master *Master) keysInCluster() ([]string, error) {
 	keyMap := make(map[string]bool)
-	if err := master.ClusterSet.All(func(n nodes.Node) error {
+	if err := master.ClusterSet.All(func(n lib.Node) error {
 		keys, err := n.LocalKeys()
 		if err != nil {
 			return err
@@ -119,7 +119,7 @@ func (master *Master) handle(m *remote.Slave) error {
 			}
 		} else if cmd.KindOf(remote.CommandLocalStore) {
 			key, value, revString := cmd.Arg(0), cmd.Arg(1), cmd.Arg(2)
-			rev, err := nodes.ToRevision(revString)
+			rev, err := lib.ToRevision(revString)
 			if err != nil {
 				m.Push(remote.Error(err))
 				continue
@@ -160,9 +160,9 @@ func (master *Master) handle(m *remote.Slave) error {
 	return nil
 }
 
-func (master *Master) Read(key string) (string, nodes.Revision, error) {
+func (master *Master) Read(key string) (string, lib.Revision, error) {
 	var value string
-	var revision nodes.Revision
+	var revision lib.Revision
 	if master.ReplicationFactor > 1 {
 		hasher := fnv.New32()
 		hasher.Write([]byte(key))
@@ -175,7 +175,7 @@ func (master *Master) Read(key string) (string, nodes.Revision, error) {
 			targets[j] = i
 			i = (i + master.ReplicationFactor) % size
 		}
-		if err := master.ClusterSet.TrialSelected(targets, func(slave nodes.Node) error {
+		if err := master.ClusterSet.TrialSelected(targets, func(slave lib.Node) error {
 			val, rev, err := slave.LocalRead(key)
 			if err != nil {
 				return err
@@ -187,7 +187,7 @@ func (master *Master) Read(key string) (string, nodes.Revision, error) {
 			return "", nil, err
 		}
 	} else {
-		if err := master.ClusterSet.Trial(func(slave nodes.Node) error {
+		if err := master.ClusterSet.Trial(func(slave lib.Node) error {
 			val, rev, err := slave.LocalRead(key)
 			if err != nil {
 				return err
@@ -213,7 +213,7 @@ func (master *Master) ClusterGroup(id int) []int {
 	return targets
 }
 
-func (master *Master) Store(key, value string, rev nodes.Revision) error {
+func (master *Master) Store(key, value string, rev lib.Revision) error {
 	if master.ReplicationFactor > 1 {
 		hasher := fnv.New32()
 		hasher.Write([]byte(key))
@@ -222,20 +222,20 @@ func (master *Master) Store(key, value string, rev nodes.Revision) error {
 		size := master.ClusterSet.Size()
 		group := int(sum) % size
 		targets := master.ClusterGroup(group)
-		if err := master.ClusterSet.Selected(targets, func(slave nodes.Node) error {
+		if err := master.ClusterSet.Selected(targets, func(slave lib.Node) error {
 			return slave.LocalStore(key, value, rev)
 		}); err != nil {
 			return err
 		}
 	} else {
-		if err := master.ClusterSet.All(func(slave nodes.Node) error {
+		if err := master.ClusterSet.All(func(slave lib.Node) error {
 			return slave.LocalStore(key, value, rev)
 		}); err != nil {
 			return err
 		}
 	}
 
-	if err := master.ReplicaSet.All(func(m nodes.Master) error {
+	if err := master.ReplicaSet.All(func(m lib.Master) error {
 		_, err := m.Revision(rev)
 		if err != nil {
 			return err
@@ -248,7 +248,7 @@ func (master *Master) Store(key, value string, rev nodes.Revision) error {
 	return nil
 }
 
-func (master *Master) joinExistingCluster(peer nodes.Master) error {
+func (master *Master) joinExistingCluster(peer lib.Master) error {
 	master.ready()
 	if err := peer.Assist(master); err != nil {
 		return err
@@ -290,10 +290,10 @@ func (master *Master) Listen() error {
 	return nil
 }
 
-func (master *Master) Assist(p nodes.Master) error {
+func (master *Master) Assist(p lib.Master) error {
 	if !master.ReplicaSet.Has(p) {
 		master.ReplicaSet.Join(p)
-		master.ReplicaSet.Trial(func(peer nodes.Master) error {
+		master.ReplicaSet.Trial(func(peer lib.Master) error {
 			if peer.Address() == master.Address() {
 				return errSameInstance
 			}
@@ -305,7 +305,7 @@ func (master *Master) Assist(p nodes.Master) error {
 	}
 
 	if master.Primary {
-		master.ClusterSet.Trial(func(peer nodes.Node) error {
+		master.ClusterSet.Trial(func(peer lib.Node) error {
 			if peer.Address() == master.Address() {
 				return errSameInstance
 			}
@@ -319,17 +319,17 @@ func (master *Master) Assist(p nodes.Master) error {
 	return nil
 }
 
-func (master *Master) Cluster() ([]nodes.Node, error) {
+func (master *Master) Cluster() ([]lib.Node, error) {
 	return master.ClusterSet.Instance(), nil
 }
 
-func (master *Master) Join(p nodes.Node) error {
+func (master *Master) Join(p lib.Node) error {
 	if !master.ClusterSet.Has(p) {
 		master.ClusterSet.Join(p)
 		mirrors := cluster.New()
 		if master.ReplicationFactor > 1 {
 			for i := 0; i < master.ClusterSet.Size(); i++ {
-				set := master.ClusterSet.FilterSelected(master.ClusterGroup(i), func(n nodes.Node) bool { return n.Address() != p.Address() })
+				set := master.ClusterSet.FilterSelected(master.ClusterGroup(i), func(n lib.Node) bool { return n.Address() != p.Address() })
 				mirrors.Union(set)
 			}
 		} else {
@@ -340,7 +340,7 @@ func (master *Master) Join(p nodes.Node) error {
 		}
 
 		// Find peer and copy keys
-		master.ReplicaSet.Trial(func(peer nodes.Master) error {
+		master.ReplicaSet.Trial(func(peer lib.Master) error {
 			if peer.Address() == master.Address() {
 				return errSameInstance
 			}
@@ -353,15 +353,15 @@ func (master *Master) Join(p nodes.Node) error {
 	return nil
 }
 
-func (master *Master) Replicas() ([]nodes.Master, error) {
+func (master *Master) Replicas() ([]lib.Master, error) {
 	return master.ReplicaSet.Instance(), nil
 }
 
-func (master *Master) Role() (nodes.Role, error) {
+func (master *Master) Role() (lib.Role, error) {
 	if master.Primary {
-		return nodes.RoleMasterPrimary, nil
+		return lib.RoleMasterPrimary, nil
 	}
-	return nodes.RoleMaster, nil
+	return lib.RoleMaster, nil
 }
 
 func (master *Master) Rebuild() error {
@@ -369,7 +369,7 @@ func (master *Master) Rebuild() error {
 		return nil
 	}
 	master.Slave.Rebuild()
-	master.ReplicaSet.Trial(func(peer nodes.Master) error {
+	master.ReplicaSet.Trial(func(peer lib.Master) error {
 		if peer.Address() == master.Address() {
 			return errSameInstance
 		}
@@ -384,7 +384,7 @@ func (master *Master) Rebuild() error {
 }
 
 func (master *Master) ready() {
-	master.NodeStatus = nodes.StatusReady
+	master.NodeStatus = lib.StatusReady
 }
 
 func NewMaster(local, rmt string, scale int) *Master {
@@ -396,7 +396,7 @@ func NewMaster(local, rmt string, scale int) *Master {
 			Latest:        []byte{0},
 			KeepAlive:     true,
 			Entries:       hashtable.New(),
-			NodeStatus:    nodes.StatusStartup,
+			NodeStatus:    lib.StatusStartup,
 		},
 		ReplicationFactor: scale,
 		ClusterSet:        cluster.New(),

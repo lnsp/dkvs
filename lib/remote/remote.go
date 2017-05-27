@@ -9,7 +9,7 @@ import (
 
 	"bufio"
 
-	"github.com/lnsp/dkvs/nodes"
+	"github.com/lnsp/dkvs/lib"
 )
 
 const (
@@ -256,31 +256,31 @@ func (slave *Slave) Address() string {
 	return slave.PublicAddress
 }
 
-func (slave *Slave) Read(key string) (string, nodes.Revision, error) {
+func (slave *Slave) Read(key string) (string, lib.Revision, error) {
 	response, err := slave.Queue(CommandRead.Param(key))
 	if err != nil {
 		return key, nil, err
 	}
-	rev, err := nodes.ToRevision(response.Arg(1))
+	rev, err := lib.ToRevision(response.Arg(1))
 	if err != nil {
 		return key, nil, err
 	}
 	return response.Arg(0), rev, nil
 }
 
-func (slave *Slave) LocalRead(key string) (string, nodes.Revision, error) {
+func (slave *Slave) LocalRead(key string) (string, lib.Revision, error) {
 	response, err := slave.Queue(CommandLocalRead.Param(key))
 	if err != nil {
 		return key, nil, err
 	}
-	rev, err := nodes.ToRevision(response.Arg(1))
+	rev, err := lib.ToRevision(response.Arg(1))
 	if err != nil {
 		return key, nil, err
 	}
 	return response.Arg(0), rev, nil
 }
 
-func (slave *Slave) Store(key, value string, rev nodes.Revision) error {
+func (slave *Slave) Store(key, value string, rev lib.Revision) error {
 	revString := ""
 	if rev != nil {
 		revString = rev.String()
@@ -296,7 +296,7 @@ func (slave *Slave) Store(key, value string, rev nodes.Revision) error {
 	return nil
 }
 
-func (slave *Slave) LocalStore(key, value string, rev nodes.Revision) error {
+func (slave *Slave) LocalStore(key, value string, rev lib.Revision) error {
 	response, err := slave.Queue(CommandLocalStore.Param(key, value, rev.String()))
 	if err != nil {
 		return err
@@ -307,18 +307,18 @@ func (slave *Slave) LocalStore(key, value string, rev nodes.Revision) error {
 	return nil
 }
 
-func (slave *Slave) Status() nodes.Status {
+func (slave *Slave) Status() lib.Status {
 	switch slave.remoteStatus() {
 	case StatusDown:
-		return nodes.StatusDown
+		return lib.StatusDown
 	case StatusReady:
-		return nodes.StatusReady
+		return lib.StatusReady
 	case StatusStartup:
-		return nodes.StatusStartup
+		return lib.StatusStartup
 	case StatusShutdown:
-		return nodes.StatusShutdown
+		return lib.StatusShutdown
 	default:
-		return nodes.StatusDown
+		return lib.StatusDown
 	}
 }
 
@@ -333,7 +333,7 @@ func (slave *Slave) Shutdown() error {
 	return nil
 }
 
-func (slave *Slave) Revision(rev nodes.Revision) (nodes.Revision, error) {
+func (slave *Slave) Revision(rev lib.Revision) (lib.Revision, error) {
 	cmd := CommandRevision
 	if rev != nil {
 		cmd = cmd.Param(rev.String())
@@ -342,11 +342,11 @@ func (slave *Slave) Revision(rev nodes.Revision) (nodes.Revision, error) {
 	if err != nil {
 		return nil, err
 	}
-	bytes, err := nodes.ToRevision(response.Arg(0))
+	bytes, err := lib.ToRevision(response.Arg(0))
 	if err != nil {
 		return nil, err
 	}
-	return nodes.Revision(bytes), nil
+	return lib.Revision(bytes), nil
 }
 
 func (slave *Slave) Rebuild() error {
@@ -364,42 +364,42 @@ type Master struct {
 	*Slave
 }
 
-func (master *Master) Cluster() ([]nodes.Node, error) {
+func (master *Master) Cluster() ([]lib.Node, error) {
 	response, err := master.Queue(CommandCluster)
 	if err != nil {
 		return nil, err
 	}
-	nodes := make([]nodes.Node, response.ArgCount())
+	nodes := make([]lib.Node, response.ArgCount())
 	for i := 0; i < response.ArgCount(); i++ {
 		nodes[i] = NewSlave(response.Arg(i))
 	}
 	return nodes, nil
 }
 
-func (master *Master) Replicas() ([]nodes.Master, error) {
+func (master *Master) Replicas() ([]lib.Master, error) {
 	response, err := master.Queue(CommandReplicas)
 	if err != nil {
 		return nil, err
 	}
-	replicas := make([]nodes.Master, response.ArgCount())
+	replicas := make([]lib.Master, response.ArgCount())
 	for i := 0; i < response.ArgCount(); i++ {
 		replicas[i] = NewMaster(response.Arg(i))
 	}
 	return replicas, nil
 }
 
-func (slave *Slave) Role() (nodes.Role, error) {
+func (slave *Slave) Role() (lib.Role, error) {
 	response, err := slave.Queue(CommandRole)
 	if err != nil {
-		return nodes.RoleSlave, err
+		return lib.RoleSlave, err
 	}
 	switch response.Arg(0) {
 	case RoleMasterPrimary:
-		return nodes.RoleMasterPrimary, nil
+		return lib.RoleMasterPrimary, nil
 	case RoleMaster:
-		return nodes.RoleMaster, nil
+		return lib.RoleMaster, nil
 	default:
-		return nodes.RoleSlave, nil
+		return lib.RoleSlave, nil
 	}
 }
 
@@ -419,7 +419,7 @@ func (slave *Slave) Keys() ([]string, error) {
 	return response.ArgList(), nil
 }
 
-func (slave *Slave) Mirror(peers []nodes.Node) error {
+func (slave *Slave) Mirror(peers []lib.Node) error {
 	addrs := make([]string, len(peers))
 	for i := range addrs {
 		addrs[i] = peers[i].Address()
@@ -444,7 +444,7 @@ func (slave *Slave) Close() {
 	}
 }
 
-func (master *Master) Join(n nodes.Node) error {
+func (master *Master) Join(n lib.Node) error {
 	response, err := master.Queue(CommandJoin.Param(n.Address()))
 	if err != nil {
 		return err
@@ -455,7 +455,7 @@ func (master *Master) Join(n nodes.Node) error {
 	return nil
 }
 
-func (master *Master) Assist(m nodes.Master) error {
+func (master *Master) Assist(m lib.Master) error {
 	response, err := master.Queue(CommandAssist.Param(m.Address()))
 	if err != nil {
 		return err
