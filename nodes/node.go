@@ -21,14 +21,26 @@ const (
 )
 
 type Node interface {
+	// Storage commands
 	Read(key string) (string, Revision, error)
 	Store(key, value string, rev Revision) error
-	Status() Status
-	Shutdown() error
-	Revision() (Revision, error)
+	Keys() ([]string, error)
+	Mirror([]Slave) error
+	Revision(rev Revision) (Revision, error)
+
+	// Static commands
 	Address() string
 	Role() (Role, error)
+
+	// Management commands
 	Rebuild() error
+	Status() Status
+	Shutdown() error
+
+	// Local commands
+	LocalKeys() ([]string, error)
+	LocalRead(key string) (string, Revision, error)
+	LocalStore(key, value string, rev Revision) error
 }
 
 type Slave interface {
@@ -37,9 +49,10 @@ type Slave interface {
 
 type Master interface {
 	Node
-	Cluster() ([]Node, error)
+	Cluster() ([]Slave, error)
 	Replicas() ([]Master, error)
-	Join(n Node) error
+	Join(n Slave) error
+	Assist(m Master) error
 }
 
 type Revision []byte
@@ -87,5 +100,6 @@ func (rev Revision) IsNewer(than Revision) bool {
 			return false
 		}
 	}
-	return false
+
+	return true
 }

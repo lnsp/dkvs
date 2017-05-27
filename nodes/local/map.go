@@ -42,3 +42,15 @@ func (m *Map) Store(key, val string, rev nodes.Revision) bool {
 	}
 	return true
 }
+
+func (m *Map) Keys() []string {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+	keys := make([]string, len(m.backend))
+	i := 0
+	for k := range m.backend {
+		keys[i] = k
+		i++
+	}
+	return keys
+}

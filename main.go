@@ -14,7 +14,7 @@ const (
 
 func main() {
 	role := flag.String("role", "master", "set node role to either master, slave or client")
-	replicas := flag.Int("replicas", 0, "number of replicas in cluster")
+	replicas := flag.Int("replicas", 1, "number of replicas in cluster")
 	remoteHost := flag.String("remote", "localhost:5000", "set the remote address")
 	localHost := flag.String("local", "localhost:5000", "set the local address")
 	version := flag.Bool("v", false, "display version of dkvs")

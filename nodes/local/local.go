@@ -2,6 +2,8 @@ package local
 
 import (
 	"github.com/lnsp/dkvs/nodes"
+	"github.com/lnsp/dkvs/nodes/local/cluster"
+	"github.com/lnsp/dkvs/nodes/local/replicas"
 )
 
 type Node interface {
@@ -10,7 +12,7 @@ type Node interface {
 
 type Slave struct {
 	PublicAddress string
-	Replicas      *ReplicaSet
+	ReplicaSet    replicas.Set
 	Latest        nodes.Revision
 	KeepAlive     bool
 	Entries       Map
@@ -19,12 +21,7 @@ type Slave struct {
 
 type Master struct {
 	Slave
-}
-
-func (m *Master) Listen() error {
-	return nil
-}
-
-func NewMaster(local, remote string, replicas int) *Master {
-	return nil
+	ReplicationFactor int
+	ClusterSet        cluster.Set
+	Primary           bool
 }

@@ -2,81 +2,21 @@ package local
 
 import (
 	"errors"
+	"fmt"
 	"net"
+	"strings"
 
 	"github.com/lnsp/dkvs/nodes"
+	"github.com/lnsp/dkvs/nodes/local/replicas"
 	"github.com/lnsp/dkvs/nodes/remote"
 )
 
-func (slave *Slave) handleSlave(s *remote.Slave) error {
-	defer s.Close()
-	for slave.KeepAlive {
-		cmd, err := s.Poll()
-		if err != nil {
-			return err
-		}
-		if cmd.KindOf(remote.CommandStore) {
-			key, value, revString := cmd.Arg(0), cmd.Arg(1), cmd.Arg(2)
-			var result nodes.Revision
-			if revString != "" {
-				storeRev, err := nodes.ToRevision(revString)
-				if err != nil {
-					s.Push(remote.CommandError.Param(err.Error()))
-					continue
-				}
-				result = storeRev
-			} else {
-				if err := slave.Replicas.Trial(func(m nodes.Master) error {
-					rev, err := m.Revision()
-					if err != nil {
-						return err
-					}
-					result = rev.Increase()
-					return nil
-				}); err != nil {
-					s.Push(remote.CommandError.Param(err.Error()))
-					continue
-				}
-			}
-			if err := slave.Replicas.Trial(func(m nodes.Master) error {
-				return m.Store(key, value, result)
-			}); err != nil {
-				s.Push(remote.CommandError.Param(err.Error()))
-				continue
-			}
-			if err := s.Push(cmd.Param(remote.StoreOK)); err != nil {
-				return err
-			}
-		} else if cmd.KindOf(remote.CommandRead) {
-			key := cmd.Arg(0)
-			var value string
-			var revision nodes.Revision
-			if err := slave.Replicas.Trial(func(m nodes.Master) error {
-				val, rev, err := m.Read(key)
-				if err != nil {
-					return err
-				}
-				value = val
-				revision = rev
-				return nil
-			}); err != nil {
-				s.Push(remote.CommandError.Param(err.Error()))
-				continue
-			}
-			if err := s.Push(cmd.Param(value, revision.String())); err != nil {
-				return err
-			}
-		} else {
-			if err := slave.handleLocalCommand(cmd, s); err != nil {
-				s.Push(remote.CommandError.Param(err.Error()))
-			}
-		}
-	}
-	return nil
-}
-
-func (slave *Slave) handleLocalCommand(cmd *remote.Command, m remote.Node) error {
+// local handles commands that share their behaviour on both slave and master instances.
+func (slave *Slave) local(cmd *remote.Command, m remote.Node) error {
 	if cmd.KindOf(remote.CommandStatus) {
+		// handle STATUS, interpret local state and send it back
+		// syntax STATUS -> STATUS#...
+		// syntax STATUS#TAGRET -> STATUS#TARGET
 		if cmd.ArgCount() > 0 {
 			switch cmd.Arg(0) {
 			case remote.StatusDown:
@@ -105,6 +45,8 @@ func (slave *Slave) handleLocalCommand(cmd *remote.Command, m remote.Node) error
 		}
 		return nil
 	} else if cmd.KindOf(remote.CommandShutdown) {
+		// shutdown stops listening for new connections and kills all active loops
+		// SYNTAX: SHUTDOWN -> SHUTDOWN#OK
 		err := slave.Shutdown()
 		status := remote.ShutdownOK
 		if err != nil {
@@ -115,12 +57,30 @@ func (slave *Slave) handleLocalCommand(cmd *remote.Command, m remote.Node) error
 		}
 		return nil
 	} else if cmd.KindOf(remote.CommandRevision) {
-		revision, _ := slave.Revision()
-		if err := m.Push(cmd.Param(revision.String())); err != nil {
+		// revision stores and retrieves local revision information
+		// SYNTAX: revision -> REVISION#LATEST-REVISION
+		// retrieve the latest revision
+		// SYNTAX: revision#rev-code -> REVISION#LATEST-REVISION
+		// retrieve the latest revision, if the given rev-code is newer, latest revision is updated
+		var rev nodes.Revision
+		if cmd.ArgCount() > 0 {
+			arg, err := nodes.ToRevision(cmd.Arg(0))
+			if err != nil {
+				return err
+			}
+			rev = arg
+		}
+		rev, err := slave.Revision(rev)
+		if err != nil {
+			return err
+		}
+		if err := m.Push(cmd.Param(rev.String())); err != nil {
 			return err
 		}
 		return nil
 	} else if cmd.KindOf(remote.CommandRole) {
+		// role retrieves the local role information
+		// SYNTAX: role -> ROLE#NODE-ROLE
 		remoteRole := remote.RoleSlave
 		role, _ := slave.Role()
 		switch role {
@@ -135,85 +95,197 @@ func (slave *Slave) handleLocalCommand(cmd *remote.Command, m remote.Node) error
 			return err
 		}
 		return nil
+	} else if cmd.KindOf(remote.CommandRebuild) {
+		// rebuild forces to refetch all replica addresses
+		// SYNTAX: REBUILD -> REBUILD#OK
+		if err := slave.Rebuild(); err != nil {
+			return err
+		}
+		return m.Push(cmd.Param(remote.RebuildOK))
+	} else if cmd.KindOf(remote.CommandReplicas) {
+		// replicas returns all registered replicated masters in the cluster
+		// SYNTAX: REPLICAS -> REPLICAS#HOST1.COM;HOST2.COM;...
+		return m.Push(remote.CommandReplicas.Param(slave.ReplicaSet.Collect()...))
+	} else if cmd.KindOf(remote.CommandAddress) {
+		// address returns the node's host address
+		// SYNTAX: ADDRESS -> ADDRESS#here.comes.it:5000
+		return m.Push(cmd.Param(slave.Address()))
+	} else if cmd.KindOf(remote.CommandMirror) {
+		// mirror tells the node to mirror another node's local data
+		// SYNTAX: MIRROR -> MIRROR#OK
+		peers := make([]nodes.Slave, cmd.ArgCount())
+		for i, host := range cmd.ArgList() {
+			peers[i] = remote.NewSlave(host)
+		}
+		if err := slave.Mirror(peers); err != nil {
+			return err
+		}
+		if err := m.Push(cmd.Param(remote.MirrorOK)); err != nil {
+			return err
+		}
+		return nil
+	} else if cmd.KindOf(remote.CommandLocalKeys) {
+		// keys_local fetches all stored keys and returns them
+		// SYNTAX: KEYS_LOCAL -> KEYS_LOCAL#KEY1;KEY2;...
+		keys, err := slave.LocalKeys()
+		if err != nil {
+			return err
+		}
+		if err := m.Push(cmd.Param(keys...)); err != nil {
+			return err
+		}
+		return nil
+	} else if cmd.KindOf(remote.CommandHandshake) {
+		// handshake does nothing. it's there to check connection state.
+		// SYNTAX: HANDSHAKE -> HANDSHAKE#OK
+		if err := m.Push(cmd.Param(remote.HandshakeOK)); err != nil {
+			return err
+		}
+		return nil
 	}
 	return errors.New("Command context not local")
 }
 
-func (slave *Slave) handlePrimaryMaster(m *remote.Master, active bool) error {
+func (slave *Slave) handle(m *remote.Slave) error {
 	defer m.Close()
-	if active {
-		if err := m.Join(slave); err != nil {
-			return err
-		}
-		if err := slave.Own(m); err != nil {
-			return err
-		}
-	}
-
 	for slave.KeepAlive {
 		cmd, err := m.Poll()
 		if err != nil {
 			return err
 		}
 		if cmd.KindOf(remote.CommandStore) {
+			// store tells the node to store a key, value pair.
+			// on a slave it fetches the latest revision, increments it and tells a master about the change.
+			// SYNTAX: STORE#KEY;VALUE -> STORE#OK
+			// pulls the latest revision from a master, increments it and commits the change.
+			// SYNTAX: STORE#KEY;VALUE;REVISION -> STORE#OK
+			// uses the given revision information to commit the change
 			key, value, revString := cmd.Arg(0), cmd.Arg(1), cmd.Arg(2)
-			rev, err := nodes.ToRevision(revString)
-			if err != nil {
-				m.Push(remote.CommandError.Param(err.Error()))
-				continue
+			var result nodes.Revision
+			if revString != "" {
+				storeRev, err := nodes.ToRevision(revString)
+				if err != nil {
+					m.Push(remote.Error(err))
+					continue
+				}
+				result = storeRev
+			} else {
+				if err := slave.ReplicaSet.Trial(func(m nodes.Master) error {
+					rev, err := m.Revision(nil)
+					if err != nil {
+						return err
+					}
+					result = rev.Increase()
+					return nil
+				}); err != nil {
+					m.Push(remote.CommandError.Param("Could not pull latest revision from master"))
+					continue
+				}
 			}
-			if err := slave.Store(key, value, rev); err != nil {
-				m.Push(remote.CommandError.Param(err.Error()))
+			if err := slave.Store(key, value, result); err != nil {
+				m.Push(remote.Error(err))
 				continue
 			}
 			if err := m.Push(cmd.Param(remote.StoreOK)); err != nil {
 				return err
 			}
 		} else if cmd.KindOf(remote.CommandRead) {
+			// read contacts one of the masters in the replica set and pulls the set data.
+			// SYNTAX: READ#KEY -> READ#VALUE;REVISION
 			key := cmd.Arg(0)
-			val, rev, err := slave.Read(key)
+			value, revision, err := slave.Read(key)
 			if err != nil {
-				m.Push(remote.CommandError.Param(err.Error()))
+				m.Push(remote.Error(err))
+				continue
+			}
+			if err := m.Push(cmd.Param(value, revision.String())); err != nil {
+				return err
+			}
+		} else if cmd.KindOf(remote.CommandLocalStore) {
+			// store_local stores a key-value-revision set locally.
+			// it refuses to store it if the local version has a higher revision number.
+			// SYNTAX: STORE_LOCAL#KEY;VALUE;REVISION -> STORE_LOCAL#OK
+			key, value, revString := cmd.Arg(0), cmd.Arg(1), cmd.Arg(2)
+			rev, err := nodes.ToRevision(revString)
+			if err != nil {
+				m.Push(remote.Error(err))
+				continue
+			}
+			if err := slave.LocalStore(key, value, rev); err != nil {
+				m.Push(remote.Error(err))
+				continue
+			}
+			if err := m.Push(cmd.Param(remote.StoreOK)); err != nil {
+				return err
+			}
+		} else if cmd.KindOf(remote.CommandLocalRead) {
+			// read_local reads from the local key-value store.
+			// SYNTAX: READ_LOCAL#KEY -> READ_LOCAL#VALUE;REVISION
+			key := cmd.Arg(0)
+			val, rev, err := slave.LocalRead(key)
+			if err != nil {
+				m.Push(remote.Error(err))
 				continue
 			}
 			if err := m.Push(cmd.Param(val, rev.String())); err != nil {
 				return err
 			}
+		} else if cmd.KindOf(remote.CommandJoin) {
+			// join tells one of the masters that the call node wants to join the cluster as a store.
+			// SYNTAX: JOIN#STORE-ADDRESS -> JOIN#OK
+			slv := remote.NewSlave(cmd.Arg(0))
+			if err := slave.ReplicaSet.Trial(func(master nodes.Master) error {
+				return master.Join(slv)
+			}); err != nil {
+				m.Push(remote.Error(err))
+				continue
+			}
+			if err := m.Push(remote.CommandJoin.Param(remote.JoinOK)); err != nil {
+				continue
+			}
+		} else if cmd.KindOf(remote.CommandAssist) {
+			// assist tells one of the masters that the call node wants to join the replica set as a master.
+			// SYNTAX: ASSIST#MASTER-ADDRESS -> ASSIST#OK
+			ast := remote.NewMaster(cmd.Arg(0))
+			if err := slave.ReplicaSet.Trial(func(master nodes.Master) error {
+				return master.Assist(ast)
+			}); err != nil {
+				m.Push(remote.Error(err))
+				continue
+			}
+			if err := m.Push(remote.CommandAssist.Param(remote.AssistOK)); err != nil {
+				continue
+			}
 		} else {
-			if err := slave.handleLocalCommand(cmd, m); err != nil {
-				m.Push(remote.CommandError.Param(err.Error()))
+			// check for other common commands
+			if err := slave.local(cmd, m); err != nil {
+				m.Push(remote.Error(err))
+				continue
 			}
 		}
 	}
 	return nil
 }
 
-func (slave *Slave) Own(m nodes.Master) error {
-	replicas, err := m.Replicas()
-	if err != nil {
-		return err
-	}
-	slave.Replicas.Set(replicas)
-	return nil
-}
-
-func (slave *Slave) handleMaster(m *remote.Master) error {
-	defer m.Close()
-	for slave.KeepAlive {
-		cmd, err := m.Poll()
+func (slave *Slave) Rebuild() error {
+	slave.ReplicaSet.Trial(func(n nodes.Master) error {
+		replicas, err := n.Replicas()
 		if err != nil {
 			return err
 		}
-		if cmd.KindOf(remote.CommandOwn) {
-			return slave.handlePrimaryMaster(m, false)
-		} else if err := m.Push(remote.CommandError); err != nil {
-			return err
-		}
-	}
+		slave.ReplicaSet.Set(replicas)
+		return nil
+	})
 	return nil
 }
 
 func (slave *Slave) Store(key, value string, rev nodes.Revision) error {
+	return slave.ReplicaSet.Trial(func(m nodes.Master) error {
+		return m.Store(key, value, rev)
+	})
+}
+
+func (slave *Slave) LocalStore(key, value string, rev nodes.Revision) error {
 	if rev.IsNewer(slave.Latest) {
 		slave.Latest = rev
 	}
@@ -225,6 +297,25 @@ func (slave *Slave) Store(key, value string, rev nodes.Revision) error {
 }
 
 func (slave *Slave) Read(key string) (string, nodes.Revision, error) {
+	var (
+		value    string
+		revision nodes.Revision
+	)
+	if err := slave.ReplicaSet.Trial(func(m nodes.Master) error {
+		val, rev, err := m.Read(key)
+		if err != nil {
+			return err
+		}
+		value = val
+		revision = rev
+		return nil
+	}); err != nil {
+		return "", nil, err
+	}
+	return value, revision, nil
+}
+
+func (slave *Slave) LocalRead(key string) (string, nodes.Revision, error) {
 	val, rev, ok := slave.Entries.Read(key)
 	if !ok {
 		return key, nil, errors.New("Key not found")
@@ -248,38 +339,26 @@ func (slave *Slave) Role() (nodes.Role, error) {
 	return nodes.RoleSlave, nil
 }
 
-func (slave *Slave) Revision() (nodes.Revision, error) {
+func (slave *Slave) Revision(rev nodes.Revision) (nodes.Revision, error) {
+	if rev != nil && rev.IsNewer(slave.Latest) {
+		slave.Latest = rev
+	}
 	return slave.Latest, nil
 }
 
-func (slave *Slave) ConnectToSocket(conn net.Conn, active bool) error {
-	node := &remote.Slave{
-		Connection:    conn,
-		PublicAddress: conn.RemoteAddr().String(),
-	}
-	node.PublicAddress = node.Address()
-	role, err := node.Role()
-	if err != nil {
-		node.Close()
-		return err
-	}
-	switch role {
-	case nodes.RoleMasterPrimary:
-		return slave.handlePrimaryMaster(&remote.Master{node}, active)
-	case nodes.RoleMaster:
-		return slave.handleMaster(&remote.Master{node})
-	case nodes.RoleSlave:
-		return slave.handleSlave(node)
-	}
-	return nil
+func (slave *Slave) ready() {
+	slave.NodeStatus = nodes.StatusReady
 }
 
-func (slave *Slave) ConnectTo(address string) error {
-	conn, err := net.Dial("tcp", address)
-	if err != nil {
-		return err
+func (slave *Slave) joinExistingCluster() {
+	slave.ready()
+	master := slave.ReplicaSet.Item()
+	if err := master.Join(slave); err != nil {
+		return
 	}
-	return slave.ConnectToSocket(conn, true)
+	if err := slave.Rebuild(); err != nil {
+		return
+	}
 }
 
 func (slave *Slave) Listen() error {
@@ -287,32 +366,86 @@ func (slave *Slave) Listen() error {
 	if err != nil {
 		return err
 	}
+	if slave.ReplicaSet.Size() > 0 {
+		go slave.joinExistingCluster()
+	}
 	for slave.KeepAlive {
 		conn, err := listener.Accept()
 		if err != nil {
 			continue
 		}
 		defer conn.Close()
-		go slave.ConnectToSocket(conn, false)
+		go slave.handle(&remote.Slave{
+			Connection: conn,
+		})
 	}
 	return nil
+}
+
+func (slave *Slave) Log(tag string, args ...interface{}) {
+	fmt.Print("["+strings.ToUpper(tag)+"] ", fmt.Sprintln(args...))
 }
 
 func (slave *Slave) Address() string {
 	return slave.PublicAddress
 }
 
-func NewSlave(local, primary string) *Slave {
-	node := &Slave{
+func (slave *Slave) Mirror(peers []nodes.Slave) error {
+	for _, peer := range peers {
+		if peer.Address() == slave.Address() {
+			continue
+		}
+		keys, err := peer.LocalKeys()
+		if err != nil {
+			return err
+		}
+		for _, key := range keys {
+			if key == "" {
+				continue
+			}
+			value, revision, err := peer.LocalRead(key)
+			if err != nil {
+				return err
+			}
+			slave.LocalStore(key, value, revision)
+		}
+	}
+
+	return nil
+}
+
+func (slave *Slave) Keys() ([]string, error) {
+	var keys []string
+	if err := slave.ReplicaSet.Trial(func(master nodes.Master) error {
+		k, err := master.Keys()
+		if err != nil {
+			return err
+		}
+		keys = k
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return keys, nil
+}
+
+func (slave *Slave) LocalKeys() ([]string, error) {
+	return slave.Entries.Keys(), nil
+}
+
+func NewSlave(local, rmt string) *Slave {
+	slave := &Slave{
 		PublicAddress: local,
-		Replicas:      &ReplicaSet{},
+		ReplicaSet:    replicas.New(),
 		Latest:        []byte{},
 		KeepAlive:     true,
 		Entries:       NewMap(),
 		NodeStatus:    nodes.StatusStartup,
 	}
-	if primary != "" {
-		go node.ConnectTo(primary)
+	if rmt != "" {
+		slave.ReplicaSet.Join(remote.NewMaster(rmt))
+	} else {
+		slave.ready()
 	}
-	return node
+	return slave
 }
