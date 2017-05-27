@@ -240,6 +240,7 @@ func (master *Master) joinExistingCluster(peer lib.Master) error {
 	if err := master.Rebuild(); err != nil {
 		return err
 	}
+	master.Log("master", "joined existing cluster", peer.Address())
 	return nil
 }
 
