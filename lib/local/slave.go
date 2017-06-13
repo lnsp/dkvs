@@ -1,3 +1,4 @@
+// Package local provides a master-slave implementation to run on a local machine.
 package local
 
 import (
@@ -286,6 +287,7 @@ func (slave *Slave) handle(m *remote.Slave) error {
 	return nil
 }
 
+// Rebuild refetches the replica set.
 func (slave *Slave) Rebuild() error {
 	slave.ReplicaSet.Trial(func(n lib.Master) error {
 		replicas, err := n.Replicas()
@@ -298,12 +300,14 @@ func (slave *Slave) Rebuild() error {
 	return nil
 }
 
+// Store tells a replica to store a key-value pair.
 func (slave *Slave) Store(key, value string, rev lib.Revision) error {
 	return slave.ReplicaSet.Trial(func(m lib.Master) error {
 		return m.Store(key, value, rev)
 	})
 }
 
+// LocalStore stores the key-value pair locally.
 func (slave *Slave) LocalStore(key, value string, rev lib.Revision) error {
 	if rev.IsNewer(slave.Latest) {
 		slave.Latest = rev
@@ -315,6 +319,7 @@ func (slave *Slave) LocalStore(key, value string, rev lib.Revision) error {
 	return nil
 }
 
+// Read tells a replica to look up a key-value pair.
 func (slave *Slave) Read(key string) (string, lib.Revision, error) {
 	var (
 		value    string
@@ -334,6 +339,7 @@ func (slave *Slave) Read(key string) (string, lib.Revision, error) {
 	return value, revision, nil
 }
 
+// LocalRead looks up a key-value pair.
 func (slave *Slave) LocalRead(key string) (string, lib.Revision, error) {
 	val, rev, ok := slave.Entries.Read(key)
 	if !ok {
@@ -342,10 +348,12 @@ func (slave *Slave) LocalRead(key string) (string, lib.Revision, error) {
 	return val, rev, nil
 }
 
+// Status returns the nodes status.
 func (slave *Slave) Status() lib.Status {
 	return slave.NodeStatus
 }
 
+// Shutdown stops the node service.
 func (slave *Slave) Shutdown() error {
 	if !slave.KeepAlive {
 		return errors.New("Already shutting down")
@@ -354,10 +362,12 @@ func (slave *Slave) Shutdown() error {
 	return nil
 }
 
+// Role returns the nodes role.
 func (slave *Slave) Role() (lib.Role, error) {
 	return lib.RoleSlave, nil
 }
 
+// Revision returns the latest stored revision.
 func (slave *Slave) Revision(rev lib.Revision) (lib.Revision, error) {
 	if rev != nil && rev.IsNewer(slave.Latest) {
 		slave.Latest = rev
@@ -365,6 +375,7 @@ func (slave *Slave) Revision(rev lib.Revision) (lib.Revision, error) {
 	return slave.Latest, nil
 }
 
+// Listen for and handle incoming connections.
 func (slave *Slave) Listen() error {
 	listener, err := net.Listen("tcp", slave.PublicAddress)
 	if err != nil {
@@ -386,14 +397,17 @@ func (slave *Slave) Listen() error {
 	return nil
 }
 
+// Log puts stuff in the console.
 func (slave *Slave) Log(tag string, args ...interface{}) {
 	fmt.Print("["+strings.ToUpper(tag)+"] ", fmt.Sprintln(args...))
 }
 
+// Address returns the nodes public address.
 func (slave *Slave) Address() string {
 	return slave.PublicAddress
 }
 
+// Mirror fetches the local key set from the peers and stores them locally.
 func (slave *Slave) Mirror(peers []lib.Node) error {
 	for _, peer := range peers {
 		if peer.Address() == slave.Address() {
@@ -418,6 +432,7 @@ func (slave *Slave) Mirror(peers []lib.Node) error {
 	return nil
 }
 
+// Keys tells the replica to retrieve all keys in the cluster.
 func (slave *Slave) Keys() ([]string, error) {
 	var keys []string
 	if err := slave.ReplicaSet.Trial(func(master lib.Master) error {
@@ -433,10 +448,12 @@ func (slave *Slave) Keys() ([]string, error) {
 	return keys, nil
 }
 
+// LocalKeys returns all locally stored keys.
 func (slave *Slave) LocalKeys() ([]string, error) {
 	return slave.Entries.Keys(), nil
 }
 
+// NewSlave initiates a new slave node.
 func NewSlave(local, rmt string) *Slave {
 	slave := &Slave{
 		PublicAddress: local,
