@@ -207,7 +207,7 @@ func (slave *Slave) Push(cmd *Command) error {
 	} else {
 		return errors.New("Could not push to dead connection")
 	}
-	slave.Log("push", cmd)
+	slave.Log("push", "on connection", slave.Connection, "with", cmd)
 	_, err := slave.Connection.Write(cmd.Marshal())
 	if err != nil {
 		slave.Reset()
@@ -251,7 +251,7 @@ func (slave *Slave) Poll() (*Command, error) {
 	if err != nil {
 		return nil, errors.New("Could not unmarshal command")
 	}
-	slave.Log("poll", cmd)
+	slave.Log("poll", "on connection", slave.Connection, "with", cmd)
 	return cmd, nil
 }
 
