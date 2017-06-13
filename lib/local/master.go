@@ -289,18 +289,18 @@ func (master *Master) Assist(p lib.Master) error {
 			}
 			return peer.Assist(p)
 		})
-	}
 
-	if master.Primary {
-		master.ClusterSet.Trial(func(peer lib.Node) error {
-			if peer.Address() == master.Address() {
-				return errSameInstance
-			}
-			if peer.Address() == p.Address() {
-				return errSameInstance
-			}
-			return peer.Rebuild()
-		})
+		if master.Primary {
+			master.ClusterSet.Trial(func(peer lib.Node) error {
+				if peer.Address() == master.Address() {
+					return errSameInstance
+				}
+				if peer.Address() == p.Address() {
+					return errSameInstance
+				}
+				return peer.Rebuild()
+			})
+		}
 	}
 
 	return nil
