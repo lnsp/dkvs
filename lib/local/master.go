@@ -184,6 +184,7 @@ func (master *Master) Read(key string) (string, lib.Revision, error) {
 	return value, revision, nil
 }
 
+// ClusterGroup returns the ids of the nodes addressed by the hash.
 func (master *Master) ClusterGroup(hash int) []int {
 	targets := make([]int, master.ReplicationFactor)
 	size := master.ClusterSet.Size()
@@ -194,6 +195,8 @@ func (master *Master) ClusterGroup(hash int) []int {
 	return targets
 }
 
+// Store puts a key-value pair in the cluster. It looks up the matching cluster group
+// for the key and tells every node in the group to store the key-value pair locally.
 func (master *Master) Store(key, value string, rev lib.Revision) error {
 	if master.ReplicationFactor > 1 {
 		hasher := fnv.New32()
@@ -244,6 +247,7 @@ func (master *Master) joinExistingCluster(peer lib.Master) error {
 	return nil
 }
 
+// Listen waits for new connections.
 func (master *Master) Listen() error {
 	listener, err := net.Listen("tcp", master.PublicAddress)
 	if err != nil {
@@ -272,6 +276,7 @@ func (master *Master) Listen() error {
 	return nil
 }
 
+// Assist puts the peer node in the replica set and notifies the other cluster masters.
 func (master *Master) Assist(p lib.Master) error {
 	if !master.ReplicaSet.Has(p) {
 		master.ReplicaSet.Join(p)
@@ -301,10 +306,13 @@ func (master *Master) Assist(p lib.Master) error {
 	return nil
 }
 
+// Cluster returns a instance of the cluster set.
 func (master *Master) Cluster() ([]lib.Node, error) {
 	return master.ClusterSet.Instance(), nil
 }
 
+// Join puts the peer node in the cluster set, requests it to mirror one of its group peers
+// and notifies the other masters in the replica set.
 func (master *Master) Join(p lib.Node) error {
 	if !master.ClusterSet.Has(p) {
 		master.ClusterSet.Join(p)
@@ -335,10 +343,14 @@ func (master *Master) Join(p lib.Node) error {
 	return nil
 }
 
+// Replicas returns an instance of the replica set.
 func (master *Master) Replicas() ([]lib.Master, error) {
 	return master.ReplicaSet.Instance(), nil
 }
 
+// Role returns the master nodes role.
+// If it returns primary, it had no peer on startup.
+// if it returns secondary, it joined an existing cluster on startup.
 func (master *Master) Role() (lib.Role, error) {
 	if master.Primary {
 		return lib.RoleMasterPrimary, nil
@@ -346,6 +358,7 @@ func (master *Master) Role() (lib.Role, error) {
 	return lib.RoleMaster, nil
 }
 
+// Rebuild refetches the replica and cluster set.
 func (master *Master) Rebuild() error {
 	if master.Primary {
 		return nil
@@ -369,6 +382,7 @@ func (master *Master) ready() {
 	master.NodeStatus = lib.StatusReady
 }
 
+// NewMaster initializes a new local master runtime.
 func NewMaster(local, rmt string, scale int) *Master {
 	var master *Master
 	master = &Master{
