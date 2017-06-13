@@ -1,3 +1,4 @@
+// Package hashtable provides functionality for storing and retrieving key-value pairs associated with a specific revision.
 package hashtable
 
 import (
