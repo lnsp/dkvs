@@ -197,6 +197,7 @@ func (slave *Slave) remoteStatus() string {
 	return StatusDown
 }
 
+// Push publishes a command to the remote slave.
 func (slave *Slave) Push(cmd *Command) error {
 	if !slave.Dead {
 		err := slave.Open()
@@ -215,10 +216,12 @@ func (slave *Slave) Push(cmd *Command) error {
 	return nil
 }
 
+// Log logs text to the console.
 func (slave *Slave) Log(tag string, args ...interface{}) {
 	fmt.Print("["+strings.ToUpper(tag)+"] ", fmt.Sprintln(args...))
 }
 
+// Reset disconnects and resets the remote connection.
 func (slave *Slave) Reset() {
 	if slave.Connection != nil {
 		slave.Connection.Close()
@@ -226,6 +229,7 @@ func (slave *Slave) Reset() {
 	}
 }
 
+// Poll waits and pulls a command from the slave.
 func (slave *Slave) Poll() (*Command, error) {
 	if !slave.Dead {
 		err := slave.Open()
@@ -251,6 +255,7 @@ func (slave *Slave) Poll() (*Command, error) {
 	return cmd, nil
 }
 
+// Queue sends a command, waits for a response command and returns the result.
 func (slave *Slave) Queue(cmd *Command) (*Command, error) {
 	if err := slave.Push(cmd); err != nil {
 		return nil, errors.New("Could not write request to socket")
@@ -268,6 +273,7 @@ func (slave *Slave) Queue(cmd *Command) (*Command, error) {
 	return respCmd, nil
 }
 
+// Open initializes the remote connection.
 func (slave *Slave) Open() error {
 	if slave.Connection != nil {
 		return nil
@@ -289,6 +295,7 @@ func (slave *Slave) Open() error {
 	return nil
 }
 
+// Address returns the slaves public address.
 func (slave *Slave) Address() string {
 	if slave.PublicAddress != "" {
 		return slave.PublicAddress
@@ -301,6 +308,7 @@ func (slave *Slave) Address() string {
 	return slave.PublicAddress
 }
 
+// Read pulls the key-value pair from the remote cluster.
 func (slave *Slave) Read(key string) (string, lib.Revision, error) {
 	response, err := slave.Queue(CommandRead.Param(key))
 	if err != nil {
@@ -313,6 +321,7 @@ func (slave *Slave) Read(key string) (string, lib.Revision, error) {
 	return response.Arg(0), rev, nil
 }
 
+// LocalRead pulls the key-value pair from the remote node.
 func (slave *Slave) LocalRead(key string) (string, lib.Revision, error) {
 	response, err := slave.Queue(CommandLocalRead.Param(key))
 	if err != nil {
@@ -325,6 +334,7 @@ func (slave *Slave) LocalRead(key string) (string, lib.Revision, error) {
 	return response.Arg(0), rev, nil
 }
 
+// Store puts the key-value pair in the remote cluster.
 func (slave *Slave) Store(key, value string, rev lib.Revision) error {
 	revString := ""
 	if rev != nil {
@@ -341,6 +351,7 @@ func (slave *Slave) Store(key, value string, rev lib.Revision) error {
 	return nil
 }
 
+// LocalStore puts the key-value pair in the remote node.
 func (slave *Slave) LocalStore(key, value string, rev lib.Revision) error {
 	response, err := slave.Queue(CommandLocalStore.Param(key, value, rev.String()))
 	if err != nil {
@@ -352,6 +363,7 @@ func (slave *Slave) LocalStore(key, value string, rev lib.Revision) error {
 	return nil
 }
 
+// Status returns the remote nodes internal status.
 func (slave *Slave) Status() lib.Status {
 	switch slave.remoteStatus() {
 	case StatusDown:
@@ -367,6 +379,7 @@ func (slave *Slave) Status() lib.Status {
 	}
 }
 
+// Shutdown tells the remote node to shutdown.
 func (slave *Slave) Shutdown() error {
 	response, err := slave.Queue(CommandShutdown)
 	if err != nil {
@@ -378,6 +391,7 @@ func (slave *Slave) Shutdown() error {
 	return nil
 }
 
+// Revision retrieves the latest revision from the remote node.
 func (slave *Slave) Revision(rev lib.Revision) (lib.Revision, error) {
 	cmd := CommandRevision
 	if rev != nil {
@@ -394,6 +408,7 @@ func (slave *Slave) Revision(rev lib.Revision) (lib.Revision, error) {
 	return lib.Revision(bytes), nil
 }
 
+// Rebuild tells the remote node to clear and rebuilds its cluster information.
 func (slave *Slave) Rebuild() error {
 	response, err := slave.Queue(CommandRebuild)
 	if err != nil {
@@ -410,6 +425,7 @@ type Master struct {
 	*Slave
 }
 
+// Cluster returns the nodes in the remote cluster.
 func (master *Master) Cluster() ([]lib.Node, error) {
 	response, err := master.Queue(CommandCluster)
 	if err != nil {
@@ -422,6 +438,7 @@ func (master *Master) Cluster() ([]lib.Node, error) {
 	return nodes, nil
 }
 
+// Replicas returns the masters in the remote cluster.
 func (master *Master) Replicas() ([]lib.Master, error) {
 	response, err := master.Queue(CommandReplicas)
 	if err != nil {
@@ -434,6 +451,7 @@ func (master *Master) Replicas() ([]lib.Master, error) {
 	return replicas, nil
 }
 
+// Role returns the nodes role in the cluster.
 func (slave *Slave) Role() (lib.Role, error) {
 	response, err := slave.Queue(CommandRole)
 	if err != nil {
@@ -449,6 +467,7 @@ func (slave *Slave) Role() (lib.Role, error) {
 	}
 }
 
+// LocalKeys returns the keys stored locally on the remote node.
 func (slave *Slave) LocalKeys() ([]string, error) {
 	response, err := slave.Queue(CommandLocalKeys.Param())
 	if err != nil {
@@ -457,6 +476,7 @@ func (slave *Slave) LocalKeys() ([]string, error) {
 	return response.ArgList(), nil
 }
 
+// Keys returns the keys stored in the cluster.
 func (slave *Slave) Keys() ([]string, error) {
 	response, err := slave.Queue(CommandKeys.Param())
 	if err != nil {
@@ -465,6 +485,7 @@ func (slave *Slave) Keys() ([]string, error) {
 	return response.ArgList(), nil
 }
 
+// Mirror tells the node to mirror a node in the cluster.
 func (slave *Slave) Mirror(peers []lib.Node) error {
 	addrs := make([]string, len(peers))
 	for i := range addrs {
@@ -480,6 +501,7 @@ func (slave *Slave) Mirror(peers []lib.Node) error {
 	return nil
 }
 
+// Close stops the remote connection.
 func (slave *Slave) Close() {
 	if !slave.Dead {
 		if slave.Connection != nil {
@@ -490,6 +512,7 @@ func (slave *Slave) Close() {
 	}
 }
 
+// Join tells the master that a node wants to join its cluster.
 func (master *Master) Join(n lib.Node) error {
 	response, err := master.Queue(CommandJoin.Param(n.Address()))
 	if err != nil {
@@ -501,6 +524,7 @@ func (master *Master) Join(n lib.Node) error {
 	return nil
 }
 
+// Assist tells the master that a new master node wants to help out in the cluster.
 func (master *Master) Assist(m lib.Master) error {
 	response, err := master.Queue(CommandAssist.Param(m.Address()))
 	if err != nil {
