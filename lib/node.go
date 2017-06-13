@@ -1,3 +1,4 @@
+// Package lib provides a collection of types and methods to run a key-value storage compatible to the dkvs specification.
 package lib
 
 import (
