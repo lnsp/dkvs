@@ -6,12 +6,21 @@ import (
 	"github.com/lnsp/dkvs/lib"
 )
 
+// Map stores key-value pairs associated with a revision.
+// If an entry should be overriden, the map checks if the updated entry has a newer revision.
+// If yes, it will copy the data, else it will discard the change.
 type Map interface {
+	// Read retrieves the key-value pair from the data storage.
+	// It returns the key, the revision and if everything has gone ok.
 	Read(string) (string, lib.Revision, bool)
+	// Store puts the key-value pair in the data storage.
+	// it returns if the change has been committed.
 	Store(string, string, lib.Revision) bool
+	// Keys returns a slice of keys stored in the key-value storage.
 	Keys() []string
 }
 
+// New initializes a new hash table.
 func New() Map {
 	return &hashTable{
 		backend: map[string]hashTableEntry{},
