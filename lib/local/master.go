@@ -184,10 +184,10 @@ func (master *Master) Read(key string) (string, lib.Revision, error) {
 	return value, revision, nil
 }
 
-func (master *Master) ClusterGroup(id int) []int {
+func (master *Master) ClusterGroup(hash int) []int {
 	targets := make([]int, master.ReplicationFactor)
 	size := master.ClusterSet.Size()
-	for i, j := id, 0; j < master.ReplicationFactor; j++ {
+	for i, j := hash*master.ReplicationFactor, 0; j < master.ReplicationFactor; j++ {
 		targets[j] = i
 		i = (i + master.ReplicationFactor) % size
 	}
