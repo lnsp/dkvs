@@ -1,3 +1,4 @@
+// Package remote provides a remote interface for network nodes.
 package remote
 
 import (
@@ -12,54 +13,87 @@ import (
 	"github.com/lnsp/dkvs/lib"
 )
 
+// A node in the cluster can either be down (not reachable), ready (usable), in startup mode (online, but not yet usable)
+// or in shutdown mode (online, soon unreachable).
+const (
+	StatusDown     = "DOWN"
+	StatusReady    = "READY"
+	StatusStartup  = "STARTUP"
+	StatusShutdown = "SHUTDOWN"
+)
+
+// A nodes role in the cluster can either be primary. secondary or generic.
+const (
+	RoleMasterPrimary = "PRIMARY"
+	RoleMaster        = "SECONDARY"
+	RoleSlave         = "GENERIC"
+)
+
+// Most command respond with a binary state, most often OK or DENIED.
+const (
+	ShutdownOK     = "OK"
+	ShutdownDenied = "DENIED"
+	StoreOK        = "OK"
+	StoreDenied    = "DENIED"
+	JoinOK         = "OK"
+	JoinDenied     = "DENIED"
+	JoinInUse      = "IN USE"
+	RebuildOK      = "OK"
+	HandshakeOK    = "OK"
+	AssistOK       = "OK"
+	RevisionOK     = "OK"
+	MirrorOK       = "OK"
+)
+
 const (
 	maxReconnects     = 5
 	reconnectInterval = 3 * time.Second
 	cmdArgSeparator   = ";"
 	cmdNameSeparator  = "#"
-	StatusDown        = "DOWN"
-	StatusReady       = "READY"
-	StatusStartup     = "STARTUP"
-	StatusShutdown    = "SHUTDOWN"
-	ShutdownOK        = "OK"
-	ShutdownDenied    = "DENIED"
-	StoreOK           = "OK"
-	StoreDenied       = "DENIED"
-	RoleMasterPrimary = "PRIMARY"
-	RoleMaster        = "SECONDARY"
-	RoleSlave         = "GENERIC"
-	JoinOK            = "OK"
-	JoinDenied        = "DENIED"
-	JoinInUse         = "IN USE"
-	RebuildOK         = "OK"
-	HandshakeOK       = "OK"
-	AssistOK          = "OK"
-	RevisionOK        = "OK"
-	MirrorOK          = "OK"
 )
 
 var (
-	CommandCluster    = &Command{Name: "CLUSTER"}
-	CommandReplicas   = &Command{Name: "REPLICAS"}
-	CommandRole       = &Command{Name: "ROLE"}
-	CommandJoin       = &Command{Name: "JOIN"}
-	CommandRevision   = &Command{Name: "REVISION"}
-	CommandStore      = &Command{Name: "STORE"}
+	// CommandCluster retrieves a list of nodes in the cluster.
+	CommandCluster = &Command{Name: "CLUSTER"}
+	// CommandReplicas retrieves a list of masters in the cluster.
+	CommandReplicas = &Command{Name: "REPLICAS"}
+	// CommandRole sets and gets the nodes role.
+	CommandRole = &Command{Name: "ROLE"}
+	// CommandJoin tells the master that a specific node wants to join its cluster.
+	CommandJoin = &Command{Name: "JOIN"}
+	// CommandRevision gets the nodes local revision.
+	CommandRevision = &Command{Name: "REVISION"}
+	// CommandStore tells the cluster to store a key-value pair.
+	CommandStore = &Command{Name: "STORE"}
+	// CommandLocalStore tells the node to store a key-value pair locally.
 	CommandLocalStore = &Command{Name: "STORE_LOCAL"}
-	CommandLocalRead  = &Command{Name: "READ_LOCAL"}
-	CommandRead       = &Command{Name: "READ"}
-	CommandError      = &Command{Name: "ERROR"}
-	CommandStatus     = &Command{Name: "STATUS"}
-	CommandShutdown   = &Command{Name: "SHUTDOWN"}
-	CommandAddress    = &Command{Name: "ADDRESS"}
-	CommandRebuild    = &Command{Name: "REBUILD"}
-	CommandHandshake  = &Command{Name: "HANDSHAKE"}
-	CommandAssist     = &Command{Name: "ASSIST"}
-	CommandMirror     = &Command{Name: "MIRROR"}
-	CommandLocalKeys  = &Command{Name: "KEYS_LOCAL"}
-	CommandKeys       = &Command{Name: "KEYS"}
+	// CommandLocalRead retrieves a local key-value pair from the node.
+	CommandLocalRead = &Command{Name: "READ_LOCAL"}
+	// CommandRead retrieves a key-value pair from the cluster.
+	CommandRead = &Command{Name: "READ"}
+	// CommandError signals an error.
+	CommandError = &Command{Name: "ERROR"}
+	// CommandStatus sets and gets the nodes internal status.
+	CommandStatus = &Command{Name: "STATUS"}
+	// CommandShutdown kills the cluster node.
+	CommandShutdown = &Command{Name: "SHUTDOWN"}
+	// CommandAddress retrieves the nodes public address.
+	CommandAddress = &Command{Name: "ADDRESS"}
+	// CommandRebuild tells the node to rebuild its cluster access data.
+	CommandRebuild = &Command{Name: "REBUILD"}
+	// CommandHandshake does nothing than shakin dem hands.
+	CommandHandshake = &Command{Name: "HANDSHAKE"}
+	// CommandAssist tells the master that a node wants to assist in the cluster as a master.
+	CommandAssist = &Command{Name: "ASSIST"}
+	// CommandMirror tells the receiver to mirror the specified node.
+	CommandMirror = &Command{Name: "MIRROR"}
+	// CommandLocalKeys retrieves the list of locally stored keys.
+	CommandLocalKeys = &Command{Name: "KEYS_LOCAL"}
+	// CommandKeys retrieves the list of keys stored in the cluster.
+	CommandKeys = &Command{Name: "KEYS"}
 )
 
+// Node is a remote node connection.
 type Node interface {
 	Close()
 	Queue(cmd *Command) (*Command, error)
@@ -67,19 +101,23 @@ type Node interface {
 	Push(*Command) error
 }
 
+// Error generates a parameterized error command.
 func Error(err error) *Command {
 	return CommandError.Param(strings.ToUpper(err.Error()))
 }
 
+// Command is a generic DKVS command that can be send via a network connection.
 type Command struct {
 	Name string
 	Args []string
 }
 
+// KindOf checks if the command types are the same.
 func (cmd Command) KindOf(kind *Command) bool {
 	return cmd.Name == kind.Name
 }
 
+// Arg gets the command argument at index i.
 func (cmd Command) Arg(index int) string {
 	if len(cmd.Args) <= index {
 		return ""
@@ -87,14 +125,17 @@ func (cmd Command) Arg(index int) string {
 	return cmd.Args[index]
 }
 
+// ArgCount returns the number of arguments.
 func (cmd Command) ArgCount() int {
 	return len(cmd.Args)
 }
 
+// ArgList returns a copy of the commands arguments.
 func (cmd Command) ArgList() []string {
 	return cmd.Args[:]
 }
 
+// Param builds a new command instance with the same type but different arguments.
 func (cmd Command) Param(params ...string) *Command {
 	return &Command{
 		Name: cmd.Name,
@@ -102,14 +143,17 @@ func (cmd Command) Param(params ...string) *Command {
 	}
 }
 
+// Marshal converts the command into a slice of bytes.
 func (cmd Command) Marshal() []byte {
 	return []byte(cmd.Name + cmdNameSeparator + strings.Join(cmd.Args, cmdArgSeparator) + "\n")
 }
 
+// String outputs the command in a human readable format.
 func (cmd Command) String() string {
 	return fmt.Sprintf("%s (%s)", cmd.Name, strings.Join(cmd.Args, ", "))
 }
 
+// UnmarshalCommand generates a command from a string of bytes. It may return an error while parsing.
 func UnmarshalCommand(cmd []byte) (*Command, error) {
 	cmdString := string(cmd)
 	cmdTokens := strings.Split(cmdString, cmdNameSeparator)
@@ -131,6 +175,7 @@ func UnmarshalCommand(cmd []byte) (*Command, error) {
 	}, nil
 }
 
+// Slave is a remotely connected cluster slave.
 type Slave struct {
 	Connection    net.Conn
 	PublicAddress string
@@ -360,6 +405,7 @@ func (slave *Slave) Rebuild() error {
 	return nil
 }
 
+// Master is a remotely connected master in the cluster.
 type Master struct {
 	*Slave
 }
@@ -466,10 +512,12 @@ func (master *Master) Assist(m lib.Master) error {
 	return nil
 }
 
+// NewMaster initializes a new remote-connected master with the specified public address.
 func NewMaster(addr string) *Master {
 	return &Master{NewSlave(addr)}
 }
 
+// NewSlave initializes a new remote-connected slave with the specified public address.
 func NewSlave(addr string) *Slave {
 	return &Slave{PublicAddress: addr}
 }
