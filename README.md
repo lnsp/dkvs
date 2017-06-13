@@ -5,22 +5,22 @@ An implementation of a cloud-native distributed key-value storage.
 
 ### Installation
 ```bash
-$ go get github.com/lnsp/dkvs
+$ go get github.com/lnsp/dkvs/cmd/dkvsd
 ```
 
 ### Starting up a master instance
 ```bash
-$ $GOPATH/bin/dkvs --role master --local localhost:5000 --remote ""
+$ dkvsd --role master --local localhost:5000 --remote ""
 ```
 
 ### Starting up a secondary master
 ```bash
-$ $GOPATH/bin/dkvs --role master --local localhost:5001 --remote localhost:5000
+$ dkvsd --role master --local localhost:5001 --remote localhost:5000
 ```
 
 ### Adding some nodes
 ```bash
-$ $GOPATH/bin/dkvs --role slave --local localhost:5002 --remote localhost:5000
+$ dkvsd --role slave --local localhost:5002 --remote localhost:5000
 ```
 
 ## IS IT WEB-SCALE?
