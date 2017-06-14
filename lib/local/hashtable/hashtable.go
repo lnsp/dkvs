@@ -1,3 +1,7 @@
+// Copyright 2017 Lennart Espe. All rights reserved.
+// Use of this source code is governed by a MIT-style
+// license that can be found in the LICENSE file.
+
 // Package hashtable provides functionality for storing and retrieving key-value pairs associated with a specific revision.
 package hashtable
 

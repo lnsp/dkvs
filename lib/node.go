@@ -1,3 +1,7 @@
+// Copyright 2017 Lennart Espe. All rights reserved.
+// Use of this source code is governed by a MIT-style
+// license that can be found in the LICENSE file.
+
 // Package lib provides a collection of types and methods to run a key-value storage compatible to the dkvs specification.
 package lib
 

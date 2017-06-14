@@ -1,3 +1,7 @@
+// Copyright 2017 Lennart Espe. All rights reserved.
+// Use of this source code is governed by a MIT-style
+// license that can be found in the LICENSE file.
+
 // Command dkvsd starts a new cluster node.
 //
 // Usage
@@ -11,7 +15,7 @@
 //          set node role to either master, slave or client (default "master")
 //    -v    display version of dkvs
 //
-// Examples:
+// Configuration examples
 //    # start a master on the local machine.
 //    dkvsd -role master -replicas 3 -remote ""
 //    # start a node to join the cluster
