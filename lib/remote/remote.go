@@ -10,8 +10,13 @@ import (
 
 	"bufio"
 
+	log "github.com/Sirupsen/logrus"
 	"github.com/lnsp/dkvs/lib"
 )
+
+func init() {
+	log.SetLevel(log.DebugLevel)
+}
 
 // A node in the cluster can either be down (not reachable), ready (usable), in startup mode (online, but not yet usable)
 // or in shutdown mode (online, soon unreachable).
@@ -207,18 +212,17 @@ func (slave *Slave) Push(cmd *Command) error {
 	} else {
 		return errors.New("Could not push to dead connection")
 	}
-	slave.Log("push", "on connection", slave.Connection, "with", cmd)
+
+	log.WithFields(log.Fields{
+		"connection": slave.Connection,
+		"command":    cmd,
+	}).Debug("Pushing data to socket")
 	_, err := slave.Connection.Write(cmd.Marshal())
 	if err != nil {
 		slave.Reset()
 		return errors.New("Could not write to socket")
 	}
 	return nil
-}
-
-// Log logs text to the console.
-func (slave *Slave) Log(tag string, args ...interface{}) {
-	fmt.Print("["+strings.ToUpper(tag)+"] ", fmt.Sprintln(args...))
 }
 
 // Reset disconnects and resets the remote connection.
@@ -251,7 +255,10 @@ func (slave *Slave) Poll() (*Command, error) {
 	if err != nil {
 		return nil, errors.New("Could not unmarshal command")
 	}
-	slave.Log("poll", "on connection", slave.Connection, "with", cmd)
+	log.WithFields(log.Fields{
+		"connection": slave.Connection,
+		"command":    cmd,
+	}).Debug("Polling command from socket")
 	return cmd, nil
 }
 

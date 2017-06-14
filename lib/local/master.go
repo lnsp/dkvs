@@ -6,6 +6,7 @@ import (
 
 	"hash/fnv"
 
+	log "github.com/Sirupsen/logrus"
 	"github.com/lnsp/dkvs/lib"
 	"github.com/lnsp/dkvs/lib/local/cluster"
 	"github.com/lnsp/dkvs/lib/local/hashtable"
@@ -243,7 +244,10 @@ func (master *Master) joinExistingCluster(peer lib.Master) error {
 	if err := master.Rebuild(); err != nil {
 		return err
 	}
-	master.Log("master", "joined existing cluster", peer.Address())
+	log.WithFields(log.Fields{
+		"local": master.Address(),
+		"peer":  peer.Address(),
+	}).Info("Joined existing cluster")
 	return nil
 }
 
@@ -253,6 +257,10 @@ func (master *Master) Listen() error {
 	if err != nil {
 		return err
 	}
+
+	log.WithFields(log.Fields{
+		"local": master.PublicAddress,
+	}).Info("Waiting for peers")
 
 	if !master.Primary {
 		go master.joinExistingCluster(master.ReplicaSet.Item())
@@ -265,11 +273,15 @@ func (master *Master) Listen() error {
 		}
 		defer conn.Close()
 		go func(conn net.Conn) {
-			err := master.handle(&remote.Slave{
+			slave := &remote.Slave{
 				Connection: conn,
-			})
+			}
+			err := master.handle(slave)
 			if err != nil {
-				master.Log("error", err)
+				log.WithFields(log.Fields{
+					"error": err,
+					"peer":  slave.Address(),
+				}).Error("Failed to handle client")
 			}
 		}(conn)
 	}
@@ -281,6 +293,13 @@ func (master *Master) Assist(p lib.Master) error {
 	if master.ReplicaSet.Has(p) {
 		return nil
 	}
+
+	log.WithFields(log.Fields{
+		"peer":    p.Address(),
+		"local":   master.Address(),
+		"primary": master.Primary,
+	}).Info("Request to assist cluster")
+
 	master.ReplicaSet.Join(p)
 	master.ReplicaSet.Trial(func(peer lib.Master) error {
 		if peer.Address() == master.Address() {
@@ -289,11 +308,16 @@ func (master *Master) Assist(p lib.Master) error {
 		if peer.Address() == p.Address() {
 			return errSameInstance
 		}
+		log.WithFields(log.Fields{
+			"peer":    p.Address(),
+			"replica": peer.Address(),
+		}).Debug("Forward assist request to replica")
 		return peer.Assist(p)
 	})
 	if !master.Primary {
 		return nil
 	}
+
 	master.ClusterSet.Trial(func(peer lib.Node) error {
 		if peer.Address() == master.Address() {
 			return errSameInstance
@@ -301,6 +325,10 @@ func (master *Master) Assist(p lib.Master) error {
 		if peer.Address() == p.Address() {
 			return errSameInstance
 		}
+		log.WithFields(log.Fields{
+			"peer": p.Address(),
+			"node": peer.Address(),
+		}).Debug("Force rebuild on cluster node")
 		return peer.Rebuild()
 	})
 	return nil
@@ -317,6 +345,11 @@ func (master *Master) Join(p lib.Node) error {
 	if master.ClusterSet.Has(p) {
 		return nil
 	}
+	log.WithFields(log.Fields{
+		"primary": master.Primary,
+		"local":   master.Address(),
+		"peer":    p.Address(),
+	}).Info("Request to join cluster")
 	master.ClusterSet.Join(p)
 	mirrors := cluster.New()
 	if master.ReplicationFactor > 1 {
@@ -328,6 +361,12 @@ func (master *Master) Join(p lib.Node) error {
 		mirrors = master.ClusterSet
 	}
 	if err := p.Mirror(mirrors.Instance()); err != nil {
+		log.WithFields(log.Fields{
+			"primary": master.Primary,
+			"local":   master.Address(),
+			"peer":    p.Address(),
+			"mirrors": mirrors.Instance(),
+		}).Error("Mirror rebuild failed on node")
 		return err
 	}
 	// Find peer and copy keys
@@ -363,6 +402,7 @@ func (master *Master) Rebuild() error {
 	if master.Primary {
 		return nil
 	}
+
 	master.Slave.Rebuild()
 	master.ReplicaSet.Trial(func(peer lib.Master) error {
 		if peer.Address() == master.Address() {
@@ -375,6 +415,9 @@ func (master *Master) Rebuild() error {
 		master.ClusterSet.Set(nodes)
 		return nil
 	})
+	log.WithFields(log.Fields{
+		"nodes": master.ClusterSet.Instance(),
+	}).Info("Refetched cluster nodes")
 	return nil
 }
 

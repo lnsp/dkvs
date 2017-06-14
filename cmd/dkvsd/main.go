@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"os"
 
+	log "github.com/Sirupsen/logrus"
 	"github.com/lnsp/dkvs/lib/local"
 )
 
@@ -54,5 +55,9 @@ func main() {
 		fmt.Printf("usage:\n\t%s [-v] [--role [master | slave | client]] [--replicas [N]] [--local ...] [--remote ...]\n", os.Args[0])
 		os.Exit(1)
 	}
-	instance.Listen()
+	if err := instance.Listen(); err != nil {
+		log.WithFields(log.Fields{
+			"error": err,
+		}).Error("Unexpected shutdown")
+	}
 }

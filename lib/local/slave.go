@@ -3,9 +3,7 @@ package local
 
 import (
 	"errors"
-	"fmt"
 	"net"
-	"strings"
 
 	"github.com/lnsp/dkvs/lib"
 	"github.com/lnsp/dkvs/lib/local/hashtable"
@@ -391,15 +389,11 @@ func (slave *Slave) Listen() error {
 		}
 		defer conn.Close()
 		go slave.handle(&remote.Slave{
-			Connection: conn,
+			Connection:    conn,
+			PublicAddress: conn.RemoteAddr().String(),
 		})
 	}
 	return nil
-}
-
-// Log puts stuff in the console.
-func (slave *Slave) Log(tag string, args ...interface{}) {
-	fmt.Print("["+strings.ToUpper(tag)+"] ", fmt.Sprintln(args...))
 }
 
 // Address returns the nodes public address.
