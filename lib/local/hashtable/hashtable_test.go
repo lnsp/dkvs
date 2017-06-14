@@ -129,6 +129,22 @@ func TestNew(t *testing.T) {
 	}
 }
 
+func equalSets(a, b []string) bool {
+	for _, i := range a {
+		found := false
+		for _, j := range b {
+			if i == j {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
+}
+
 func Test_hashTable_Keys(t *testing.T) {
 	type fields struct {
 		lock    sync.RWMutex
@@ -148,7 +164,7 @@ func Test_hashTable_Keys(t *testing.T) {
 				lock:    tt.fields.lock,
 				backend: tt.fields.backend,
 			}
-			if got := m.Keys(); !reflect.DeepEqual(got, tt.want) {
+			if got := m.Keys(); !equalSets(tt.want, got) {
 				t.Errorf("hashTable.Keys() = %v, want %v", got, tt.want)
 			}
 		})
