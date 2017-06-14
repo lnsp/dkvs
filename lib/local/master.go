@@ -278,31 +278,31 @@ func (master *Master) Listen() error {
 
 // Assist puts the peer node in the replica set and notifies the other cluster masters.
 func (master *Master) Assist(p lib.Master) error {
-	if !master.ReplicaSet.Has(p) {
-		master.ReplicaSet.Join(p)
-		master.ReplicaSet.Trial(func(peer lib.Master) error {
-			if peer.Address() == master.Address() {
-				return errSameInstance
-			}
-			if peer.Address() == p.Address() {
-				return errSameInstance
-			}
-			return peer.Assist(p)
-		})
-
-		if master.Primary {
-			master.ClusterSet.Trial(func(peer lib.Node) error {
-				if peer.Address() == master.Address() {
-					return errSameInstance
-				}
-				if peer.Address() == p.Address() {
-					return errSameInstance
-				}
-				return peer.Rebuild()
-			})
-		}
+	if master.ReplicaSet.Has(p) {
+		return nil
 	}
-
+	master.ReplicaSet.Join(p)
+	master.ReplicaSet.Trial(func(peer lib.Master) error {
+		if peer.Address() == master.Address() {
+			return errSameInstance
+		}
+		if peer.Address() == p.Address() {
+			return errSameInstance
+		}
+		return peer.Assist(p)
+	})
+	if !master.Primary {
+		return nil
+	}
+	master.ClusterSet.Trial(func(peer lib.Node) error {
+		if peer.Address() == master.Address() {
+			return errSameInstance
+		}
+		if peer.Address() == p.Address() {
+			return errSameInstance
+		}
+		return peer.Rebuild()
+	})
 	return nil
 }
 
@@ -314,32 +314,32 @@ func (master *Master) Cluster() ([]lib.Node, error) {
 // Join puts the peer node in the cluster set, requests it to mirror one of its group peers
 // and notifies the other masters in the replica set.
 func (master *Master) Join(p lib.Node) error {
-	if !master.ClusterSet.Has(p) {
-		master.ClusterSet.Join(p)
-		mirrors := cluster.New()
-		if master.ReplicationFactor > 1 {
-			for i := 0; i < master.ClusterSet.Size(); i++ {
-				set := master.ClusterSet.FilterSelected(master.ClusterGroup(i), func(n lib.Node) bool { return n.Address() != p.Address() })
-				mirrors.Union(set)
-			}
-		} else {
-			mirrors = master.ClusterSet
-		}
-		if err := p.Mirror(mirrors.Instance()); err != nil {
-			return err
-		}
-
-		// Find peer and copy keys
-		master.ReplicaSet.Trial(func(peer lib.Master) error {
-			if peer.Address() == master.Address() {
-				return errSameInstance
-			}
-			if peer.Address() == p.Address() {
-				return errSameInstance
-			}
-			return peer.Join(p)
-		})
+	if master.ClusterSet.Has(p) {
+		return nil
 	}
+	master.ClusterSet.Join(p)
+	mirrors := cluster.New()
+	if master.ReplicationFactor > 1 {
+		for i := 0; i < master.ClusterSet.Size(); i++ {
+			set := master.ClusterSet.FilterSelected(master.ClusterGroup(i), func(n lib.Node) bool { return n.Address() != p.Address() })
+			mirrors.Union(set)
+		}
+	} else {
+		mirrors = master.ClusterSet
+	}
+	if err := p.Mirror(mirrors.Instance()); err != nil {
+		return err
+	}
+	// Find peer and copy keys
+	master.ReplicaSet.Trial(func(peer lib.Master) error {
+		if peer.Address() == master.Address() {
+			return errSameInstance
+		}
+		if peer.Address() == p.Address() {
+			return errSameInstance
+		}
+		return peer.Join(p)
+	})
 	return nil
 }
 
