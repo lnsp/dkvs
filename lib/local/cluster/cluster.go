@@ -76,6 +76,10 @@ func (lr *clusterSet) Union(set Set) {
 }
 
 func (lr *clusterSet) Join(slave lib.Node) {
+	if lr.Has(slave) {
+		return
+	}
+
 	lr.lock.Lock()
 	lr.slaves = append(lr.slaves, slave)
 	lr.lock.Unlock()
