@@ -1,5 +1,5 @@
 # dkvs
-An implementation of a cloud-native distributed key-value storage.
+An implementation of an in-memory distributed key-value storage.
 
 ## Getting started
 
@@ -22,9 +22,6 @@ $ dkvsd --role master --local localhost:5001 --remote localhost:5000
 ```bash
 $ dkvsd --role slave --local localhost:5002 --remote localhost:5000
 ```
-
-## IS IT WEB-SCALE?
-It does not use SQL or JOINS, so it's high performance.
 
 ## High performance?
 In a single node configuration it runs on a $10 DigitalOcean VPS with about 130000 req/s. Not clustered mode. Clustered mode is slow as fuck. I'm working on it.
