@@ -28,8 +28,8 @@ import (
 	"fmt"
 	"os"
 
-	log "github.com/Sirupsen/logrus"
 	"github.com/lnsp/dkvs/lib/local"
+	log "github.com/sirupsen/logrus"
 )
 
 const (
